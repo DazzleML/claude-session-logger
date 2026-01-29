@@ -1,0 +1,15 @@
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence,
+# DazzleML will be requested for review when someone opens a pull request.
+*       @DazzleML
+
+# Core implementation
+*.js    @DazzleML
+*.py    @DazzleML
+
+# Documentation
+/docs/   @DazzleML
+*.md     @DazzleML
+
+# GitHub CI/CD
+/.github/ @DazzleML
