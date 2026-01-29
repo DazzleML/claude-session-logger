@@ -1,5 +1,6 @@
 # claude-session-logger
 
+[![GitHub release](https://img.shields.io/github/v/release/DazzleML/claude-session-logger?include_prereleases&color=brightgreen)](https://github.com/DazzleML/claude-session-logger/releases)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#platform-support)
@@ -18,101 +19,28 @@ A hook-based extension for Claude Code that provides persistent session logging,
 - **AI Rename** - `/renameAI` command for AI-assisted session naming
 - **Session Info** - `/sessioninfo` command to inspect current session state
 
-## Project Structure
+## Quick Start
 
-This project follows the Claude Code plugin architecture:
-
-```
-claude-session-logger/
-├── .claude-plugin/           # Plugin metadata
-│   ├── plugin.json
-│   └── marketplace.json
-├── hooks/                    # Plugin hooks (for Claude Code)
-│   ├── hooks.json
-│   └── scripts/
-│       ├── log-command.py
-│       └── rename_session.py
-├── commands/                 # Plugin commands
-│   ├── renameAI.md
-│   └── sessioninfo.md
-├── scripts-repo/             # Development/repo scripts (not part of plugin)
-│   ├── hooks/                # Git hooks (pre-commit, etc.)
-│   ├── install-hooks.sh
-│   └── update-version.sh
-├── version.py
-└── ...
-```
-
-## Installation
-
-### 1. Copy hook files to `~/.claude/hooks/`
+### Option 1: Plugin Marketplace (Easiest)
 
 ```bash
-# Create hooks directory if it doesn't exist
-mkdir -p ~/.claude/hooks
-
-# Copy hook files
-cp hooks/scripts/log-command.py ~/.claude/hooks/
-cp hooks/scripts/rename_session.py ~/.claude/hooks/
+claude plugin install session-logger
 ```
 
-### 2. Copy command files to `~/.claude/commands/`
+### Option 2: Local Plugin Directory
 
 ```bash
-# Create commands directory if it doesn't exist
-mkdir -p ~/.claude/commands
+# Clone the repository
+git clone https://github.com/DazzleML/claude-session-logger.git
 
-# Copy command files
-cp commands/renameAI.md ~/.claude/commands/
-cp commands/sessioninfo.md ~/.claude/commands/
-```
-
-### 3. Configure Claude Code hooks
-
-Add to your `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ~/.claude/hooks/log-command.py"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ~/.claude/hooks/log-command.py"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### 4. Install dependencies
-
-```bash
+# Install Python dependencies
 pip install -r requirements.txt
+
+# Run Claude Code with the plugin
+claude --plugin-dir /path/to/claude-session-logger
 ```
 
-Or install dazzle-filekit directly:
-
-```bash
-pip install dazzle-filekit
-```
-
-Required for cross-platform path normalization and transcript symlink creation.
+For manual installation or troubleshooting, see the [Installation Guide](docs/installation.md).
 
 ## Usage
 
@@ -185,6 +113,31 @@ To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Che
 | Linux | Expected to work |
 | macOS | Expected to work |
 
+## Project Structure
+
+This project follows the Claude Code plugin architecture:
+
+```
+claude-session-logger/
+├── .claude-plugin/           # Plugin metadata
+│   ├── plugin.json
+│   └── marketplace.json
+├── hooks/                    # Plugin hooks (for Claude Code)
+│   ├── hooks.json
+│   └── scripts/
+│       ├── log-command.py
+│       └── rename_session.py
+├── commands/                 # Plugin commands
+│   ├── renameAI.md
+│   └── sessioninfo.md
+├── scripts-repo/             # Development/repo scripts (not part of plugin)
+│   ├── hooks/                # Git hooks (pre-commit, etc.)
+│   ├── install-hooks.sh
+│   └── update-version.sh
+├── version.py
+└── ...
+```
+
 ## How It Works
 
 1. **SessionStart Hook** - On session start:
@@ -203,11 +156,6 @@ To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Che
    - `{session-id}.name-cache` - Cached session name
    - `{session-id}.run` - Current run number
    - `{session-id}.started` - Session start flag
-
-## Dependencies
-
-- **Python 3.9+** - Required
-- **dazzle-filekit** - Required for cross-platform path handling
 
 ## Comparison with cchistory
 

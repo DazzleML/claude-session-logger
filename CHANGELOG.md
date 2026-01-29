@@ -5,6 +5,28 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-01-29
+
+### Added
+- Plugin marketplace installation: `claude plugin install session-logger`
+- Detailed installation guide at `docs/installation.md`
+- GitHub release badge in README
+
+### Changed
+- Restructured README: Quick Start and Usage sections now appear before Project Structure
+- Streamlined README by moving detailed installation to separate docs file
+
+### Fixed
+- Log entry formatting: added space before closing `}` for better copy-paste
+- File paths now wrapped in double-quotes for VS Code path clicking
+- PWD path in log entries now quoted for consistency
+
+## [0.1.1] - 2026-01-29
+
+### Fixed
+- CI workflow paths updated for new plugin structure (`hooks/scripts/`)
+- Various plugin restructuring fixes
+
 ## [0.1.0] - 2026-01-29
 
 ### Added
