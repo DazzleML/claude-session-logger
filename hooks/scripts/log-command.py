@@ -875,14 +875,16 @@ def get_command_content(tool_info: ToolInfo) -> str:
         return tool_input.get("command", "")
 
     elif tool_info.name in ("Read", "Write", "Edit", "MultiEdit"):
-        return tool_input.get("file_path", "")
+        path = tool_input.get("file_path", "")
+        return f'"{path}"' if path else ""
 
     elif tool_info.name == "TodoWrite":
         todos = tool_input.get("todos", [])
         return json.dumps(todos, separators=(",", ":"))
 
     elif tool_info.name == "LS":
-        return tool_input.get("path", "")
+        path = tool_input.get("path", "")
+        return f'"{path}"' if path else ""
 
     elif tool_info.name == "Glob":
         return tool_input.get("pattern", "")
@@ -934,7 +936,7 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
 
     pwd_part = ""
     if config.pwd_enabled:
-        pwd_part = f" [{os.getcwd()}]"
+        pwd_part = f' ["{os.getcwd()}"]'
 
     # Determine content based on verbosity and action-only
     if should_use_action_only(tool_info.name, config):
@@ -957,7 +959,7 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
         else:
             content_part = f"{tool_info.name}: {command_content}"
 
-    return f"{datetime_part}{{{content_part}}}{pwd_part}"
+    return f"{datetime_part}{{{content_part} }}{pwd_part}"
 
 
 # ============================================================================
@@ -1753,7 +1755,7 @@ class SessionLogger:
         # Write to task log if task tool (use same event_time for consistency)
         if tool_category == "task" and task_content:
             datetime_part = format_datetime(self.config.datetime_mode, ts)
-            task_entry = f"{datetime_part}{{{task_content}}}"
+            task_entry = f"{datetime_part}{{{task_content} }}"
             atomic_append(self.task_log_path, task_entry)
 
     def log_failure(self, failure_entry: str) -> None:
@@ -1841,7 +1843,7 @@ def detect_and_log_failure(
 
         pwd_part = ""
         if config.pwd_enabled:
-            pwd_part = f" [{command_cwd or os.getcwd()}]"
+            pwd_part = f' ["{command_cwd or os.getcwd()}"]'
 
         if should_use_action_only(tool_info.name, config):
             failure_content = "Bash"
@@ -1850,7 +1852,7 @@ def detect_and_log_failure(
         else:
             failure_content = f"Bash: {bash_command}"
 
-        failure_entry = f"{datetime_part}{{{failure_content}}} [FAILED: {failure_reason}]{pwd_part}"
+        failure_entry = f"{datetime_part}{{{failure_content} }} [FAILED: {failure_reason}]{pwd_part}"
 
         # Add error output if enabled
         if config.failure_capture_stderr and error_output:

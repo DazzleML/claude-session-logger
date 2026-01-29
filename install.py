@@ -25,12 +25,12 @@ def install(check_only: bool = False, force: bool = False) -> bool:
     script_dir = Path(__file__).parent
     claude_dir = get_claude_dir()
 
-    # Files to install
+    # Files to install (source path relative to this script, destination relative to ~/.claude/)
     files = [
-        ("claude/hooks/log-command.py", "hooks/log-command.py"),
-        ("claude/hooks/rename_session.py", "hooks/rename_session.py"),
-        ("claude/commands/renameAI.md", "commands/renameAI.md"),
-        ("claude/commands/sessioninfo.md", "commands/sessioninfo.md"),
+        ("hooks/scripts/log-command.py", "hooks/log-command.py"),
+        ("hooks/scripts/rename_session.py", "hooks/rename_session.py"),
+        ("commands/renameAI.md", "commands/renameAI.md"),
+        ("commands/sessioninfo.md", "commands/sessioninfo.md"),
     ]
 
     print(f"Claude directory: {claude_dir}")

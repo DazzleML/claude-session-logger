@@ -23,7 +23,7 @@ echo ""
 # PYTHON SYNTAX CHECK
 # =============================================================================
 echo -e "${BLUE}Checking Python syntax...${NC}"
-python -m py_compile folder_datetime_fix/*.py scripts/*.py tests/*.py 2>/dev/null || {
+python -m py_compile hooks/scripts/*.py scripts-repo/*.py 2>/dev/null || {
     echo -e "${RED}❌ Python syntax errors found${NC}"
     echo "Fix syntax errors before pushing"
     exit 1

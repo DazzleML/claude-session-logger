@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Manual version update script for preserve
+# Manual version update script for claude-session-logger
 # Updates version string without requiring a commit
 # Useful for testing and manual version synchronization
 #
 # Usage:
-#   ./scripts/update-version.sh [--auto]
+#   ./scripts-repo/update-version.sh [--auto]
 #
 # Options:
 #   --auto    Run in automatic mode (for git hooks)
@@ -71,16 +71,13 @@ else
 fi
 
 # Configuration
-SOURCE_FILE="claude/version.py"
+SOURCE_FILE="version.py"
 
 # Check if we're in the right directory
 if [ ! -f "$SOURCE_FILE" ]; then
     # Try from scripts directory
     if [ -f "../$SOURCE_FILE" ]; then
         cd ..
-    elif [ -f "../preserve/version.py" ]; then
-        cd ..
-        SOURCE_FILE="claude/version.py"
     else
         echo -e "${RED}Error:${NC} $SOURCE_FILE not found"
         echo "Please run from the project root directory"
@@ -120,7 +117,8 @@ fi
 CURRENT_VERSION=$(grep -o '__version__ = ".*"' "$SOURCE_FILE" | cut -d'"' -f2)
 
 # Get git information
-if command -v git >/dev/null 2>&1 && [ -d ".git" -o -d "../.git" ]; then
+# Check for git - use rev-parse to handle both regular repos and worktrees
+if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
     # Get branch name with fallback
     BRANCH_NAME=$(git branch --show-current 2>/dev/null || echo "unknown")
     # Replace any slashes in branch name with hyphens

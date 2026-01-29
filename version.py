@@ -17,7 +17,7 @@ Components:
 # Semantic version components
 MAJOR = 0
 MINOR = 1
-PATCH = 0
+PATCH = 1
 
 # Optional release phase (alpha, beta, rc1, rc2, etc.)
 # Set to None for stable releases
@@ -27,7 +27,7 @@ PHASE = None  # Stable release
 # DO NOT EDIT THIS LINE MANUALLY
 # Note: Hash reflects the commit this version builds upon (HEAD at commit time)
 # The hash will be one commit behind after the commit is created (git limitation)
-__version__ = "0.1.0_private_4-20260129-3767f5d0"
+__version__ = "0.1.1_main_8-20260129-2e4b74f1"
 
 
 def get_version():

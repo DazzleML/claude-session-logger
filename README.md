@@ -18,6 +18,31 @@ A hook-based extension for Claude Code that provides persistent session logging,
 - **AI Rename** - `/renameAI` command for AI-assisted session naming
 - **Session Info** - `/sessioninfo` command to inspect current session state
 
+## Project Structure
+
+This project follows the Claude Code plugin architecture:
+
+```
+claude-session-logger/
+├── .claude-plugin/           # Plugin metadata
+│   ├── plugin.json
+│   └── marketplace.json
+├── hooks/                    # Plugin hooks (for Claude Code)
+│   ├── hooks.json
+│   └── scripts/
+│       ├── log-command.py
+│       └── rename_session.py
+├── commands/                 # Plugin commands
+│   ├── renameAI.md
+│   └── sessioninfo.md
+├── scripts-repo/             # Development/repo scripts (not part of plugin)
+│   ├── hooks/                # Git hooks (pre-commit, etc.)
+│   ├── install-hooks.sh
+│   └── update-version.sh
+├── version.py
+└── ...
+```
+
 ## Installation
 
 ### 1. Copy hook files to `~/.claude/hooks/`
@@ -27,8 +52,8 @@ A hook-based extension for Claude Code that provides persistent session logging,
 mkdir -p ~/.claude/hooks
 
 # Copy hook files
-cp claude/hooks/log-command.py ~/.claude/hooks/
-cp claude/hooks/rename_session.py ~/.claude/hooks/
+cp hooks/scripts/log-command.py ~/.claude/hooks/
+cp hooks/scripts/rename_session.py ~/.claude/hooks/
 ```
 
 ### 2. Copy command files to `~/.claude/commands/`
@@ -38,8 +63,8 @@ cp claude/hooks/rename_session.py ~/.claude/hooks/
 mkdir -p ~/.claude/commands
 
 # Copy command files
-cp claude/commands/renameAI.md ~/.claude/commands/
-cp claude/commands/sessioninfo.md ~/.claude/commands/
+cp commands/renameAI.md ~/.claude/commands/
+cp commands/sessioninfo.md ~/.claude/commands/
 ```
 
 ### 3. Configure Claude Code hooks

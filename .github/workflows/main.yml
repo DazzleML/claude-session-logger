@@ -26,9 +26,9 @@ jobs:
     - name: Lint with flake8
       run: |
         # Stop the build if there are Python syntax errors or undefined names
-        flake8 claude/hooks/*.py --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 hooks/scripts/*.py --count --select=E9,F63,F7,F82 --show-source --statistics
         # Exit-zero treats all errors as warnings
-        flake8 claude/hooks/*.py --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+        flake8 hooks/scripts/*.py --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
 
   syntax-check:
     runs-on: ubuntu-latest
@@ -46,6 +46,6 @@ jobs:
 
     - name: Verify Python syntax
       run: |
-        python -m py_compile claude/hooks/log-command.py
-        python -m py_compile claude/hooks/rename_session.py
+        python -m py_compile hooks/scripts/log-command.py
+        python -m py_compile hooks/scripts/rename_session.py
         python -m py_compile install.py

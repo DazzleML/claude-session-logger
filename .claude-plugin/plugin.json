@@ -1,0 +1,23 @@
+{
+  "name": "session-logger",
+  "version": "0.1.0",
+  "description": "Real-time session logging, command history, and auto-naming for Claude Code",
+  "author": {
+    "name": "djdarcy",
+    "github": "https://github.com/djdarcy"
+  },
+  "repository": "https://github.com/DazzleML/claude-session-logger",
+  "license": "GPL-3.0",
+  "keywords": [
+    "claude-code",
+    "session-logging",
+    "shell-history",
+    "developer-tools",
+    "cli"
+  ],
+  "claude-code": {
+    "minVersion": "1.0.0"
+  },
+  "hooks": "hooks/hooks.json",
+  "commands": "commands/"
+}

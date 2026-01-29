@@ -11,7 +11,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # PART 1: Update version.py
 # -------------------------
-UPDATE_SCRIPT="$REPO_ROOT/scripts/update-version.sh"
+UPDATE_SCRIPT="$REPO_ROOT/scripts-repo/update-version.sh"
 if [ -f "$UPDATE_SCRIPT" ]; then
     # Run in auto mode to update version before commit
     # Capture output to check if it's just "already up to date"
@@ -58,7 +58,7 @@ esac
 has_private_content=0
 for file in $(git diff --cached --name-only); do
     # Check against private content patterns
-    if echo "$file" | grep -q -E "^.*/__private__.*|^.*/private_.*|^.*~|^.*.backup|^.*.bak|^.*.log|^.*.tmp|^.*~|^.env.*|^.env.local$|^.env.private$|^CLAUDE.md$|^convos/|^credentials/|^logs/|^nul$|^private/|^revisions/|^secrets/|^test-runs/|^test_runs/"; then
+    if echo "$file" | grep -q -E "^.*/__private__.*|^.*/private_.*|^.*~|^.*.backup|^.*.bak|^.*.log|^.*.tmp|^.*~|^.env.*|^.env.local$|^.env.private$|^convos/|^credentials/|^logs/|^nul$|^private/|^revisions/|^secrets/|^test-runs/|^test_runs/"; then
         if [ $has_private_content -eq 0 ]; then
             echo ""
             echo "❌ COMMIT BLOCKED - Private Content Protection"

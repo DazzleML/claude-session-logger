@@ -6,18 +6,18 @@ Compare functions between different git commits to track code evolution,
 identify missing functionality, and generate diff reports.
 
 Usage:
-    python scripts/audit_codebase.py [baseline_commit] [current_commit]
-    python scripts/audit_codebase.py --help
+    python scripts-repo/audit_codebase.py [baseline_commit] [current_commit]
+    python scripts-repo/audit_codebase.py --help
 
 Examples:
     # Compare against v0.1.0 baseline
-    python scripts/audit_codebase.py c4528d8
+    python scripts-repo/audit_codebase.py c4528d8
 
     # Compare two specific commits
-    python scripts/audit_codebase.py c4528d8 HEAD
+    python scripts-repo/audit_codebase.py c4528d8 HEAD
 
     # Generate full report with diffs
-    python scripts/audit_codebase.py c4528d8 --full-diff
+    python scripts-repo/audit_codebase.py c4528d8 --full-diff
 """
 
 import subprocess

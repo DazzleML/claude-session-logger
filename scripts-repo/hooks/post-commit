@@ -8,8 +8,8 @@
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # Find the update-version.sh script
-if [ -f "$REPO_ROOT/scripts/update-version.sh" ]; then
-    UPDATE_SCRIPT="$REPO_ROOT/scripts/update-version.sh"
+if [ -f "$REPO_ROOT/scripts-repo/update-version.sh" ]; then
+    UPDATE_SCRIPT="$REPO_ROOT/scripts-repo/update-version.sh"
 else
     # Try relative to hook location
     HOOK_DIR="$(dirname "$0")"

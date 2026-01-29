@@ -1,0 +1,21 @@
+{
+  "name": "session-logger",
+  "displayName": "Claude Session Logger",
+  "description": "Real-time session logging, command history, and auto-naming for Claude Code. Watch commands as they happen, copy-paste on the fly, and organize your sessions automatically.",
+  "categories": [
+    "developer-tools",
+    "productivity"
+  ],
+  "tags": [
+    "logging",
+    "session-management",
+    "shell-history",
+    "cli"
+  ],
+  "repository": "https://github.com/DazzleML/claude-session-logger",
+  "homepage": "https://github.com/DazzleML/claude-session-logger#readme",
+  "support": {
+    "issues": "https://github.com/DazzleML/claude-session-logger/issues"
+  },
+  "featured": false
+}

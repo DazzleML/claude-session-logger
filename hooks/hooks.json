@@ -1,0 +1,24 @@
+{
+  "SessionStart": [
+    {
+      "matcher": ".*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python {plugin_dir}/hooks/scripts/log-command.py"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": ".*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python {plugin_dir}/hooks/scripts/log-command.py"
+        }
+      ]
+    }
+  ]
+}

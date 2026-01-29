@@ -23,7 +23,7 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # Path to update script
-UPDATE_SCRIPT="$REPO_ROOT/scripts/update-version.sh"
+UPDATE_SCRIPT="$REPO_ROOT/scripts-repo/update-version.sh"
 
 # Call the centralized version update script in auto mode
 if [ -f "$UPDATE_SCRIPT" ]; then
