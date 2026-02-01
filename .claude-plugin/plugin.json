@@ -1,6 +1,6 @@
 {
   "name": "session-logger",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Real-time session logging, command history, and auto-naming for Claude Code",
   "author": {
     "name": "djdarcy",
@@ -15,9 +15,5 @@
     "developer-tools",
     "cli"
   ],
-  "claude-code": {
-    "minVersion": "1.0.0"
-  },
-  "hooks": "hooks/hooks.json",
-  "commands": "commands/"
+  "commands": "./commands/"
 }

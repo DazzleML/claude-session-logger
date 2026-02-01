@@ -8,18 +8,24 @@ This guide covers all installation methods for claude-session-logger.
 - **Claude Code** - The Anthropic CLI tool
 - **dazzle-filekit** - Required Python package for cross-platform path handling
 
+```bash
+pip install dazzle-filekit
+```
+
 ---
 
 ## Installation Methods
 
-### Method 1: Plugin Marketplace (Easiest)
+### Method 1: From GitHub (Recommended)
 
-> **Status**: Plugin architecture not yet validated. See Method 3 for tested approach.
-
-Install directly from the Claude Code plugin marketplace:
+Install via the DazzleML marketplace:
 
 ```bash
-claude plugin install session-logger
+# Add the DazzleML marketplace (one-time setup)
+claude plugin marketplace add "DazzleML/claude-session-logger"
+
+# Install the plugin
+claude plugin install session-logger@dazzle-claude-plugins
 ```
 
 To verify installation:
@@ -31,18 +37,14 @@ claude plugin list
 To update to the latest version:
 
 ```bash
-claude plugin update session-logger
+claude plugin update session-logger@dazzle-claude-plugins
 ```
-
-**Note**: Marketplace installation automatically handles dependencies.
 
 ---
 
-### Method 2: Plugin Directory (For Development)
+### Method 2: From Local Clone (For Development)
 
-> **Status**: Plugin architecture not yet validated. See Method 3 for tested approach.
-
-Use Claude Code's `--plugin-dir` flag to load the plugin directly from a local directory.
+Use this method when developing or testing changes to the plugin.
 
 ```bash
 # Clone the repository
@@ -52,17 +54,43 @@ cd claude-session-logger
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Run Claude Code with the plugin
-claude --plugin-dir /path/to/claude-session-logger
+# Add as local marketplace (from inside the repo directory)
+claude plugin marketplace add "./"
+
+# Install the plugin
+claude plugin install session-logger@dazzle-claude-plugins
 ```
 
-**For persistent use**, you can:
-- Add `--plugin-dir` to a shell alias
-- Configure it in Claude Code settings (if supported)
+**Switching between local and GitHub sources:**
+
+```bash
+# Remove current marketplace
+claude plugin marketplace remove dazzle-claude-plugins
+
+# Add the other source
+claude plugin marketplace add "DazzleML/claude-session-logger"  # GitHub
+# OR
+claude plugin marketplace add "./"  # Local (from repo directory)
+
+# Re-install
+claude plugin install session-logger@dazzle-claude-plugins
+```
 
 ---
 
-### Method 3: Manual Installation (Tested)
+### Method 3: Plugin Directory Flag (Quick Testing)
+
+For quick testing without permanent installation:
+
+```bash
+claude --plugin-dir /path/to/claude-session-logger
+```
+
+**Note**: This method requires the flag every session.
+
+---
+
+### Method 4: Manual Installation (Legacy)
 
 Copy plugin files directly into your Claude config directory.
 
@@ -121,37 +149,35 @@ Add the following to `~/.claude/settings.json`:
 }
 ```
 
-#### Step 4: Install dependencies
-
-```bash
-pip install dazzle-filekit
-```
-
-Or install all dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
 ---
 
 ## Verifying Installation
 
 After installation, start a new Claude Code session and check:
 
-1. **Session logs created**: Look for files in `~/.claude/sesslogs/`
-2. **Commands available**: Type `/sessioninfo` to see session state
-3. **No errors**: Check `~/.claude/logs/hook-debug.log` if something seems wrong
+1. **Plugin status**: Run `claude plugin list` to see installed plugins
+2. **Session logs created**: Look for files in `~/.claude/sesslogs/`
+3. **Commands available**: Type `/sessioninfo` to see session state
+4. **No errors**: Check `~/.claude/logs/hook-debug.log` if something seems wrong
 
 ---
 
 ## Troubleshooting
+
+### Plugin not found in marketplace
+
+If `claude plugin install` fails with "Plugin not found":
+
+1. Ensure marketplace is added: `claude plugin marketplace list`
+2. Re-add if missing: `claude plugin marketplace add "DazzleML/claude-session-logger"`
+3. Try updating: `claude plugin marketplace update dazzle-claude-plugins`
 
 ### Hooks not running
 
 1. Check that Python is in your PATH
 2. Verify the hook files are executable
 3. Check `~/.claude/logs/hook-debug.log` for errors
+4. Ensure plugin is enabled: `claude plugin list` should show `✔ enabled`
 
 ### Missing dependencies
 
@@ -169,21 +195,28 @@ Make hook scripts executable:
 chmod +x ~/.claude/hooks/*.py
 ```
 
-### Windows path issues
+### Marketplace already exists error
 
-Use forward slashes or escaped backslashes in settings.json:
+If you see "marketplace already installed":
 
-```json
-"command": "python C:/Users/YourName/.claude/hooks/log-command.py"
+```bash
+claude plugin marketplace remove dazzle-claude-plugins
+claude plugin marketplace add "DazzleML/claude-session-logger"
 ```
 
 ---
 
 ## Uninstalling
 
-### If using --plugin-dir
+### If using marketplace installation
 
-Simply stop using the `--plugin-dir` flag.
+```bash
+# Uninstall the plugin
+claude plugin uninstall session-logger@dazzle-claude-plugins
+
+# Optionally remove the marketplace
+claude plugin marketplace remove dazzle-claude-plugins
+```
 
 ### If using manual installation
 
@@ -202,6 +235,21 @@ rm ~/.claude/commands/sessioninfo.md
 # Optionally remove session logs
 rm -rf ~/.claude/sesslogs/
 rm -rf ~/.claude/session-states/
+```
+
+---
+
+## Plugin Cache Location
+
+When installed via marketplace, plugins are cached at:
+
+```
+~/.claude/plugins/cache/{marketplace-name}/{plugin-name}/{version}/
+```
+
+For this plugin:
+```
+~/.claude/plugins/cache/dazzle-claude-plugins/session-logger/0.1.3/
 ```
 
 ---

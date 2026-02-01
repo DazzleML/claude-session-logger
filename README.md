@@ -21,26 +21,32 @@ A hook-based extension for Claude Code that provides persistent session logging,
 
 ## Quick Start
 
-### Option 1: Plugin Marketplace (Easiest)
+### Option 1: From GitHub (Recommended)
 
 ```bash
-claude plugin install session-logger
+# Add the DazzleML marketplace (one-time)
+claude plugin marketplace add "DazzleML/claude-session-logger"
+
+# Install the plugin
+claude plugin install session-logger@dazzle-claude-plugins
 ```
 
-### Option 2: Local Plugin Directory
+### Option 2: From Local Clone
 
 ```bash
 # Clone the repository
 git clone https://github.com/DazzleML/claude-session-logger.git
+cd claude-session-logger
 
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Run Claude Code with the plugin
-claude --plugin-dir /path/to/claude-session-logger
+# Add as local marketplace and install
+claude plugin marketplace add "./"
+claude plugin install session-logger@dazzle-claude-plugins
 ```
 
-For manual installation or troubleshooting, see the [Installation Guide](docs/installation.md).
+For more options and troubleshooting, see the [Installation Guide](docs/installation.md).
 
 ## Usage
 
