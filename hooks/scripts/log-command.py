@@ -224,6 +224,15 @@ TOOL_CATEGORIES: dict[str, str] = {
     # User interaction (stubs)
     "AskUserQuestion": "ui",
     "Skill": "skill",
+    # Plan mode
+    "EnterPlanMode": "system",
+    "ExitPlanMode": "system",
+    # Task output/control
+    "TaskOutput": "task",
+    "TaskStop": "task",
+    # ToolSearch - dynamic MCP tool discovery
+    "tool_search_tool_regex": "search",
+    "tool_search_tool_bm25": "search",
 }
 
 
@@ -912,6 +921,35 @@ def get_task_content(tool_name: str, raw_json: dict[str, Any]) -> str:
     return tool_name
 
 
+def find_line_number(file_path: str, search_string: str, max_file_size: int = 2 * 1024 * 1024) -> int | None:
+    """Find the starting line number of a string in a file.
+
+    Args:
+        file_path: Path to the file to search
+        search_string: The string to find
+        max_file_size: Skip files larger than this (default 1MB)
+
+    Returns:
+        Line number (1-indexed) or None if not found/error
+    """
+    if not search_string:
+        return None
+    try:
+        path = Path(file_path)
+        # Skip large files for performance
+        if path.stat().st_size > max_file_size:
+            return None
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        pos = content.find(search_string)
+        if pos == -1:
+            return None
+        # Count newlines before position = line number (1-indexed)
+        return content[:pos].count('\n') + 1
+    except Exception:
+        return None
+
+
 def truncate_preview(text: str, max_len: int = 20) -> str:
     """Create a safe, single-line preview of content.
 
@@ -943,23 +981,58 @@ def get_command_content(tool_info: ToolInfo) -> str:
 
     elif tool_info.name == "Read":
         path = tool_input.get("file_path", "")
-        return f'"{path}"' if path else ""
+        offset = tool_input.get("offset")  # Line number to start from
+        limit = tool_input.get("limit")    # Number of lines to read
+
+        if not path:
+            return ""
+
+        # Build path with line info for VS Code clickability
+        if offset:
+            # offset makes it clickable at that line
+            if limit:
+                # Show range: path:start-end
+                end_line = offset + limit - 1
+                path_display = f"{path}:{offset}-{end_line}"
+            else:
+                # Just starting line: path:line
+                path_display = f"{path}:{offset}"
+        else:
+            path_display = path
+
+        # Add line count suffix if limit specified without offset
+        if limit and not offset:
+            return f'"{path_display}" ({limit}L)'
+        return f'"{path_display}"'
 
     elif tool_info.name == "Write":
         path = tool_input.get("file_path", "")
         content = tool_input.get("content", "")
         preview = truncate_preview(content)
+        line_count = len(content.splitlines()) if content else 0
+        line_info = f" ({line_count}L)" if line_count > 0 else ""
         if path and preview:
-            return f'"{path}" \u2190 "{preview}"'
+            return f'"{path}" \u2190 "{preview}"{line_info}'
         return f'"{path}"' if path else ""
 
     elif tool_info.name == "Edit":
         path = tool_input.get("file_path", "")
+        old_string = tool_input.get("old_string", "")
         new_string = tool_input.get("new_string", "")
         preview = truncate_preview(new_string)
+        # Calculate line delta
+        old_lines = len(old_string.splitlines()) if old_string else 0
+        new_lines = len(new_string.splitlines()) if new_string else 0
+        if old_lines == new_lines:
+            line_info = f" ({new_lines}L)" if new_lines > 0 else ""
+        else:
+            line_info = f" (-{old_lines}/+{new_lines}L)"
+        # Find line number for clickable file:line format
+        line_num = find_line_number(path, new_string) if path and new_string else None
+        path_with_line = f"{path}:{line_num}" if line_num else path
         if path and preview:
-            return f'"{path}" \u2190 "{preview}"'
-        return f'"{path}"' if path else ""
+            return f'"{path_with_line}" \u2190 "{preview}"{line_info}'
+        return f'"{path_with_line}"' if path else ""
 
     elif tool_info.name == "MultiEdit":
         path = tool_input.get("file_path", "")
@@ -974,17 +1047,66 @@ def get_command_content(tool_info: ToolInfo) -> str:
         return f'"{path}"' if path else ""
 
     elif tool_info.name == "Glob":
-        return tool_input.get("pattern", "")
+        pattern = tool_input.get("pattern", "")
+        search_path = tool_input.get("path", "")
+        if search_path:
+            return f'{pattern} in "{search_path}"'
+        return pattern
 
     elif tool_info.name == "Grep":
         pattern = tool_input.get("pattern", "")
         glob_filter = tool_input.get("glob", "")
+        search_path = tool_input.get("path", "")
+
+        result = pattern
         if glob_filter:
-            return f'{pattern} | "{glob_filter}"'
-        return pattern
+            result += f' | "{glob_filter}"'
+
+        # Add path context if specified
+        # Use "in" only when glob is present (to distinguish glob from path)
+        # Use "|" when path only (cleaner, no ambiguity)
+        if search_path:
+            cwd = tool_info.raw_json.get("cwd", "")
+            separator = " in " if glob_filter else " | "
+            try:
+                search_path_obj = Path(search_path).resolve()
+                cwd_obj = Path(cwd).resolve() if cwd else None
+
+                if search_path_obj.is_file():
+                    # File - always full path for VS Code clickability
+                    result += f'{separator}"{search_path_obj}"'
+                elif cwd_obj and search_path_obj != cwd_obj:
+                    # Directory - check if inside or outside cwd
+                    try:
+                        rel = search_path_obj.relative_to(cwd_obj)
+                        # Inside cwd - use relative path (compact)
+                        result += f'{separator}"{rel}/"'
+                    except ValueError:
+                        # Outside cwd - use full path
+                        result += f'{separator}"{search_path_obj}"'
+                # If search_path == cwd, omit (user knows where they are)
+            except Exception:
+                # Fallback - just show the path as given
+                result += f'{separator}"{search_path}"'
+
+        return result
 
     elif tool_info.name in ("WebSearch", "WebFetch"):
         return tool_input.get("url") or tool_input.get("query", "")
+
+    elif tool_info.name in ("EnterPlanMode", "ExitPlanMode"):
+        # Plan mode tools have no meaningful params - just marker
+        return ""
+
+    elif tool_info.name == "TaskOutput":
+        return tool_input.get("task_id", "")
+
+    elif tool_info.name == "TaskStop":
+        return tool_input.get("task_id", "")
+
+    elif tool_info.name in ("tool_search_tool_regex", "tool_search_tool_bm25"):
+        # ToolSearch for discovering MCP tools dynamically
+        return tool_input.get("query", "")
 
     elif tool_info.name == "Task":
         return tool_input.get("prompt", "")

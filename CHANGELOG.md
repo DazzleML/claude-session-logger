@@ -5,6 +5,25 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-02-01
+
+### Added
+- **Read line range logging**: Read tool now shows offset/limit as clickable line references
+  - Format: `{Read: "path:100-149" }` for offset=100, limit=50
+  - Format: `{Read: "path:100" }` for offset only
+  - Format: `{Read: "path" (50L) }` for limit only (first N lines)
+- **Edit line number logging**: Edit tool now shows line number where change was made
+  - Format: `{Edit: "path:42" ← "content..." (1L) }`
+  - Uses `find_line_number()` to locate the edited line in the file
+  - Skips line detection for files >2MB for performance
+- **ToolSearch support** (#11): Added logging for MCP tool discovery
+  - Supports `tool_search_tool_regex` and `tool_search_tool_bm25`
+  - Format: `{tool_search_tool_regex: <query> }`
+  - Triggers automatically when MCP tools would consume >10% of context
+
+### Changed
+- Increased file size limit for line detection from 1MB to 2MB
+
 ## [0.1.4] - 2026-02-01
 
 ### Added
