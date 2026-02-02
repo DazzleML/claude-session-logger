@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "dazzle-claude-plugins",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "DazzleML Claude Code plugins",
   "owner": {
     "name": "DazzleML",
@@ -11,7 +11,7 @@
     {
       "name": "session-logger",
       "description": "Real-time session logging, command history, and auto-naming for Claude Code",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "source": "./",
       "category": "developer-tools"
     }

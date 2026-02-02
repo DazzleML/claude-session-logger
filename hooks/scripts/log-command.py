@@ -56,10 +56,14 @@ class ToolInfo:
     session_id: str
     transcript_path: str
     raw_json: dict[str, Any]
+    agent_context: Optional[str] = None  # Subagent type if running in an agent
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> ToolInfo:
         """Create ToolInfo from JSON input."""
+        # Detect agent context from various possible fields
+        agent_context = cls._detect_agent_context(data)
+
         return cls(
             name=data.get("tool_name", ""),
             input=data.get("tool_input", {}),
@@ -67,7 +71,48 @@ class ToolInfo:
             session_id=data.get("session_id", "unknown"),
             transcript_path=data.get("transcript_path", ""),
             raw_json=data,
+            agent_context=agent_context,
         )
+
+    @staticmethod
+    def _detect_agent_context(data: dict[str, Any]) -> Optional[str]:
+        """Detect if this tool call is from a subagent and return agent type.
+
+        Checks various possible fields that might indicate agent context.
+        Returns the agent type (e.g., "Explore", "Plan") or None if main session.
+        """
+        # Check for explicit agent context fields (these are speculative -
+        # we'll refine based on actual JSON structure observed in debug logs)
+        possible_fields = [
+            "subagent_type",
+            "agent_type",
+            "agent_context",
+            "parent_agent",
+            "spawned_by",
+        ]
+
+        for field in possible_fields:
+            value = data.get(field)
+            if value:
+                debug_log(f"Found agent context field '{field}': {value}")
+                return str(value)
+
+        # Check for nested agent info
+        if "agent" in data and isinstance(data["agent"], dict):
+            agent_type = data["agent"].get("type") or data["agent"].get("subagent_type")
+            if agent_type:
+                debug_log(f"Found nested agent type: {agent_type}")
+                return str(agent_type)
+
+        # Check tool_params for agent context (Task tool stores subagent_type there)
+        tool_params = data.get("tool_params", {})
+        if isinstance(tool_params, dict):
+            agent_type = tool_params.get("subagent_type")
+            if agent_type:
+                debug_log(f"Found agent type in tool_params: {agent_type}")
+                return str(agent_type)
+
+        return None
 
 
 @dataclass
@@ -867,6 +912,28 @@ def get_task_content(tool_name: str, raw_json: dict[str, Any]) -> str:
     return tool_name
 
 
+def truncate_preview(text: str, max_len: int = 20) -> str:
+    """Create a safe, single-line preview of content.
+
+    Args:
+        text: The content to preview
+        max_len: Maximum length before truncation (default 20)
+
+    Returns:
+        A truncated, escaped preview string
+    """
+    if not text:
+        return ""
+    # Escape newlines for single-line display
+    text = text.replace('\r\n', '\\n').replace('\n', '\\n').replace('\r', '')
+    # Replace non-printable chars with ?
+    text = ''.join(c if c.isprintable() or c == ' ' else '?' for c in text)
+    # Truncate if needed
+    if len(text) > max_len:
+        return text[:max_len] + "..."
+    return text
+
+
 def get_command_content(tool_info: ToolInfo) -> str:
     """Extract command content based on tool type."""
     tool_input = tool_info.input
@@ -874,7 +941,27 @@ def get_command_content(tool_info: ToolInfo) -> str:
     if tool_info.name == "Bash":
         return tool_input.get("command", "")
 
-    elif tool_info.name in ("Read", "Write", "Edit", "MultiEdit"):
+    elif tool_info.name == "Read":
+        path = tool_input.get("file_path", "")
+        return f'"{path}"' if path else ""
+
+    elif tool_info.name == "Write":
+        path = tool_input.get("file_path", "")
+        content = tool_input.get("content", "")
+        preview = truncate_preview(content)
+        if path and preview:
+            return f'"{path}" \u2190 "{preview}"'
+        return f'"{path}"' if path else ""
+
+    elif tool_info.name == "Edit":
+        path = tool_input.get("file_path", "")
+        new_string = tool_input.get("new_string", "")
+        preview = truncate_preview(new_string)
+        if path and preview:
+            return f'"{path}" \u2190 "{preview}"'
+        return f'"{path}"' if path else ""
+
+    elif tool_info.name == "MultiEdit":
         path = tool_input.get("file_path", "")
         return f'"{path}"' if path else ""
 
@@ -890,7 +977,11 @@ def get_command_content(tool_info: ToolInfo) -> str:
         return tool_input.get("pattern", "")
 
     elif tool_info.name == "Grep":
-        return tool_input.get("pattern", "")
+        pattern = tool_input.get("pattern", "")
+        glob_filter = tool_input.get("glob", "")
+        if glob_filter:
+            return f'{pattern} | "{glob_filter}"'
+        return pattern
 
     elif tool_info.name in ("WebSearch", "WebFetch"):
         return tool_input.get("url") or tool_input.get("query", "")
@@ -929,6 +1020,19 @@ def format_datetime(mode: str, timestamp: Optional[datetime] = None) -> str:
     return ""
 
 
+def format_tool_name(tool_info: ToolInfo) -> str:
+    """Format tool name with optional agent context prefix.
+
+    Examples:
+        - "Bash" (main session)
+        - "Bash|Explore" (running inside Explore subagent)
+        - "Read|Plan" (running inside Plan subagent)
+    """
+    if tool_info.agent_context:
+        return f"{tool_info.name}|{tool_info.agent_context}"
+    return tool_info.name
+
+
 def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
                    event_time: datetime) -> str:
     """Generate formatted log entry based on configuration."""
@@ -938,26 +1042,29 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
     if config.pwd_enabled:
         pwd_part = f' ["{os.getcwd()}"]'
 
+    # Get tool name with agent context
+    tool_display = format_tool_name(tool_info)
+
     # Determine content based on verbosity and action-only
     if should_use_action_only(tool_info.name, config):
-        content_part = tool_info.name
+        content_part = tool_display
     else:
         if config.verbosity == 0:
             content_part = command_content
         elif config.verbosity == 1:
             content_part = command_content
         elif config.verbosity == 2:
-            content_part = f"{tool_info.name}: {command_content}"
+            content_part = f"{tool_display}: {command_content}"
         elif config.verbosity == 3:
             if tool_info.description:
-                content_part = f"{tool_info.name}: {command_content} {tool_info.description}"
+                content_part = f"{tool_display}: {command_content} {tool_info.description}"
             else:
-                content_part = f"{tool_info.name}: {command_content}"
+                content_part = f"{tool_display}: {command_content}"
         elif config.verbosity == 4:
             tool_input_json = json.dumps(tool_info.input, separators=(",", ":"))
-            content_part = f"{tool_info.name}: {command_content} {tool_input_json}"
+            content_part = f"{tool_display}: {command_content} {tool_input_json}"
         else:
-            content_part = f"{tool_info.name}: {command_content}"
+            content_part = f"{tool_display}: {command_content}"
 
     return f"{datetime_part}{{{content_part} }}{pwd_part}"
 
@@ -1903,6 +2010,13 @@ def main() -> None:
     debug_log(f"JSON_INPUT length: {len(str(json_input))}")
     debug_log(f"JSON keys: {list(json_input.keys())}")
 
+    # Log additional details to help investigate agent context (#5)
+    # These will help us understand what fields are available
+    for key in ["subagent_type", "agent_type", "agent_context", "parent_agent",
+                "spawned_by", "agent", "tool_params"]:
+        if key in json_input:
+            debug_log(f"Agent investigation - {key}: {json_input[key]}")
+
     # Detect hook event type
     hook_event_name = json_input.get("hook_event_name", "PostToolUse")
     debug_log(f"Hook event: {hook_event_name}")
@@ -1920,6 +2034,22 @@ def main() -> None:
     )
     if auto_name:
         debug_log(f"Auto-named session from folder: {auto_name}")
+
+    # On SessionStart, clear state flags so the next PostToolUse
+    # writes a fresh SESSION START marker with correct run number
+    # (fixes #9 - session resume detection)
+    if hook_event_name == "SessionStart":
+        state_dir = Path.home() / ".claude" / "session-states"
+        # Clear .started flag so marker gets written
+        started_flag = state_dir / f"{tool_info.session_id}.started"
+        # Clear .run cache so run number is recounted from log file
+        run_cache = state_dir / f"{tool_info.session_id}.run"
+        try:
+            started_flag.unlink(missing_ok=True)
+            run_cache.unlink(missing_ok=True)
+            debug_log(f"Cleared .started and .run flags for session resume")
+        except Exception as e:
+            debug_log(f"Could not clear session flags: {e}")
 
     # Build session context
     session_context = build_session_context(tool_info)

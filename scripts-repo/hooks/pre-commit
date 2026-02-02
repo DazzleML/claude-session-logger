@@ -58,7 +58,7 @@ esac
 has_private_content=0
 for file in $(git diff --cached --name-only); do
     # Check against private content patterns
-    if echo "$file" | grep -q -E "^.*/__private__.*|^.*/private_.*|^.*~|^.*.backup|^.*.bak|^.*.log|^.*.tmp|^.*~|^.env.*|^.env.local$|^.env.private$|^convos/|^credentials/|^logs/|^nul$|^private/|^revisions/|^secrets/|^test-runs/|^test_runs/"; then
+    if echo "$file" | grep -q -E "^.*/__private__.*|^.*/private_.*|^.*~$|\.backup$|\.bak$|\.log$|\.tmp$|^\.env.*|^\.env\.local$|^\.env\.private$|^convos/|^credentials/|^logs/|^nul$|^private/|^revisions/|^secrets/|^test-runs/|^test_runs/"; then
         if [ $has_private_content -eq 0 ]; then
             echo ""
             echo "❌ COMMIT BLOCKED - Private Content Protection"

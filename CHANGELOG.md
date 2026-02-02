@@ -5,6 +5,41 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-02-01
+
+### Added
+- **Grep glob filter logging** (#6): Grep entries now show file glob filter alongside pattern
+  - Format: `{Grep: pattern | "*.tsx" }` when glob filter is used
+- **Write/Edit content preview** (#7): Shows first 20 characters of content being written
+  - Format: `{Write: "path" ← "content preview..." }`
+  - Newlines escaped as `\n`, non-printable chars replaced with `?`
+- **Agent context identification** (#5): Framework for identifying subagent tool calls
+  - When detected, format: `{Bash|Explore: command }` or `{Read|Plan: "path" }`
+  - Debug logging to investigate available JSON fields for agent detection
+- **Version sync tool** (`scripts-repo/sync-versions.py`): Centralized version management
+  - `--bump patch/minor/major` to increment version
+  - `--demote patch/minor/major` to decrement version
+  - `--set X.Y.Z` to set version directly
+  - `--phase alpha/beta/rc1/none` to set release phase
+  - `--check` to verify all files are in sync
+  - `--dev-refresh [VERSION...]` to clear plugin cache for development testing
+    - Without args: clears target version
+    - With args: clears specified version(s) (e.g., `--dev-refresh 0.1.3 0.1.4 0.1.5`)
+    - Use `--dry-run` to preview, `--force` to skip confirmations
+  - Calls `update-version.sh` automatically
+- **Developer guide** (`docs/dev.md`): Documentation for contributors
+
+### Fixed
+- **Session resume detection** (#9): SESSION START marker now written when resuming a session
+  - Previously, resumed sessions didn't get new markers due to persistent `.started` flag
+  - Now clears `.started` and `.run` flags on SessionStart hook
+  - Run number correctly increments by recounting markers in log file
+
+### Changed
+- Content extraction for Read, Write, Edit, MultiEdit now handled separately
+- Added `truncate_preview()` helper for safe content truncation
+- Added `format_tool_name()` helper for agent-prefixed tool names
+
 ## [0.1.3] - 2026-02-01
 
 ### Fixed

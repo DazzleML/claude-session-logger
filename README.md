@@ -97,6 +97,10 @@ Run Number: 2
 Sesslog Directory: ~/.claude/sesslogs/my-project__833a100e-..._User/
 ```
 
+## Tips
+
+- **First-time `/rename`**: The built-in `/rename` command may fail on first use in a new session (before any tools run). Just run it again or use any tool first. See [Known Quirks](docs/installation.md#known-quirks).
+
 ## Configuration
 
 The hook creates these directories automatically:
@@ -139,7 +143,8 @@ claude-session-logger/
 ├── scripts-repo/             # Development/repo scripts (not part of plugin)
 │   ├── hooks/                # Git hooks (pre-commit, etc.)
 │   ├── install-hooks.sh
-│   └── update-version.sh
+│   ├── sync-versions.py      # Version synchronization tool
+│   └── update-version.sh     # Git version string updater
 ├── version.py
 └── ...
 ```
@@ -189,6 +194,12 @@ These tools are complementary — you might use cchistory for quick historical l
 ## Contributing
 
 Contributions welcome! Please open an issue or submit a pull request.
+
+See **[Developer Guide](docs/dev.md)** for:
+- Local plugin testing workflow
+- Version management with `sync-versions.py`
+- Debugging tips and session state files
+- Pull request checklist
 
 Like the project?
 

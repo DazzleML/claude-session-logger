@@ -271,3 +271,21 @@ For this plugin:
 
 - Expected to work (not yet tested)
 - No special configuration anticipated
+
+---
+
+## Known Quirks
+
+### /rename requires transcript to exist
+
+The built-in `/rename` command may fail with `ENOENT` on first use in a brand new session (before any tool calls create the transcript file). If this happens, simply run `/rename` a second time, or use any tool first (like asking a question), then rename.
+
+```
+> /rename my-session-name
+  ⎿  Error: ENOENT: no such file or directory, open '...transcript.jsonl'
+
+> /rename my-session-name
+  ⎿  Session renamed to: my-session-name
+```
+
+This is a Claude Code behavior, not specific to this plugin.
