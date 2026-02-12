@@ -70,11 +70,64 @@ flake8 claude/hooks/*.py --max-line-length=127
 python install.py --check
 ```
 
-## Testing Changes
+## Plugin Development Workflow
 
-To test hook changes without affecting your main setup:
+### Local Marketplace Setup
 
-1. Copy modified hook to `~/.claude/hooks/`
+This project uses a **local marketplace** for development. The marketplace is configured to pull from the local `github/` folder, NOT from GitHub.
+
+**Check current marketplace configuration:**
+```bash
+cat ~/.claude/plugins/known_marketplaces.json
+```
+
+Expected output for local development:
+```json
+{
+  "dazzle-claude-plugins": {
+    "source": {
+      "source": "directory",
+      "path": "C:\\code\\claude-projects\\claude-session-logger\\github"
+    }
+  }
+}
+```
+
+**IMPORTANT**: Periodically verify the marketplace is still pointing to your local folder. It may be changed to test different configurations (e.g., pulling from GitHub instead).
+
+### Development Workflow
+
+1. **Edit** files in `github/` folder (the source of truth)
+2. **Verify syntax**: `python -m py_compile hooks/scripts/log-command.py`
+3. **Reinstall** from local marketplace:
+   ```bash
+   claude plugin install session-logger@dazzle-claude-plugins
+   ```
+4. **Test** in a new Claude Code session
+5. **Check debug log**: `~/.claude/logs/hook-debug.log`
+
+### Setting Up Local Marketplace (if needed)
+
+If the marketplace isn't configured for local development:
+```bash
+cd C:\code\claude-projects\claude-session-logger\github
+claude plugin marketplace add "./"
+```
+
+### Testing Changes
+
+After reinstalling the plugin:
+1. Start a new Claude Code session (or use a tool in existing session)
+2. Check `~/.claude/logs/hook-debug.log` for debug output
+3. Verify sesslogs are created correctly in `~/.claude/sesslogs/`
+
+### Manual Copy Fallback
+
+If the marketplace reinstall isn't working or for quick one-off testing:
+1. Copy modified hook directly to the cache:
+   ```bash
+   cp hooks/scripts/log-command.py ~/.claude/plugins/cache/dazzle-claude-plugins/session-logger/0.1.5/hooks/scripts/
+   ```
 2. Start a new Claude Code session
 3. Check `~/.claude/logs/hook-debug.log` for debug output
 4. Verify sesslogs are created correctly

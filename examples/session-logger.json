@@ -1,0 +1,46 @@
+{
+  "$schema": "../hooks/schemas/session-logger.schema.json",
+
+  "performance": {
+    "max_file_size_for_line_search": 2097152,
+    "content_preview_length": 20
+  },
+
+  "display": {
+    "verbosity": 2,
+    "datetime": "full",
+    "pwd": false
+  },
+
+  "routing": {
+    "channels": {
+      "shell": {"file_prefix": ".shell_", "enabled": true},
+      "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
+      "tasks": {"file_prefix": ".tasks_", "enabled": true}
+    },
+    "category_routes": {
+      "_default": ["shell", "sesslog"],
+      "task": ["shell", "sesslog", "tasks"],
+      "mcp": ["shell", "sesslog"]
+    },
+    "tool_overrides": {}
+  },
+
+  "action_only": {
+    "categories": {
+      "todo": true
+    },
+    "overrides": {}
+  },
+
+  "failure_capture": {
+    "enabled": false,
+    "capture_stderr": true,
+    "max_stderr_lines": 50
+  },
+
+  "task_logging": {
+    "enabled": true,
+    "include_legacy_todos": true
+  }
+}

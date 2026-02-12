@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/DazzleML/claude-session-logger/main/hooks/schemas/session-logger.schema.json",
+  "title": "Session Logger Configuration",
+  "description": "Configuration for claude-session-logger plugin",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE support"
+    },
+
+    "performance": {
+      "type": "object",
+      "description": "Performance tuning settings",
+      "properties": {
+        "max_file_size_for_line_search": {
+          "type": "integer",
+          "default": 2097152,
+          "minimum": 0,
+          "description": "Skip line number detection for files larger than this (bytes). Default: 2MB"
+        },
+        "content_preview_length": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 200,
+          "description": "Max characters for content preview in Write/Edit logs"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "display": {
+      "type": "object",
+      "description": "Log entry display settings",
+      "properties": {
+        "verbosity": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Log detail level: 0=command only, 4=full detail"
+        },
+        "datetime": {
+          "type": "string",
+          "enum": ["full", "date", "none"],
+          "default": "full",
+          "description": "Timestamp format: full (datetime), date (date only), none"
+        },
+        "pwd": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include working directory in log entries"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "routing": {
+      "type": "object",
+      "description": "Control which log channels receive entries",
+      "properties": {
+        "channels": {
+          "type": "object",
+          "description": "Define available log channels. Key is channel name.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "file_prefix": {
+                "type": "string",
+                "description": "Filename prefix (e.g., '.shell_', '.mcp_')"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this channel is active"
+              }
+            },
+            "required": ["file_prefix"]
+          },
+          "default": {
+            "shell": {"file_prefix": ".shell_", "enabled": true},
+            "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
+            "tasks": {"file_prefix": ".tasks_", "enabled": true}
+          }
+        },
+        "category_routes": {
+          "type": "object",
+          "description": "Map tool categories to channels. Use '_default' for fallback.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Array of channel names to write to"
+          },
+          "default": {
+            "_default": ["shell", "sesslog"],
+            "task": ["shell", "sesslog", "tasks"]
+          }
+        },
+        "tool_overrides": {
+          "type": "object",
+          "description": "Override routing for specific tools (by exact tool name)",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Array of channel names"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "action_only": {
+      "type": "object",
+      "description": "Action-only mode settings (log tool name only, not params)",
+      "properties": {
+        "categories": {
+          "type": "object",
+          "description": "Enable action-only per category",
+          "additionalProperties": {"type": "boolean"},
+          "default": {
+            "todo": true
+          }
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Per-tool overrides",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["true", "false", "use_category"]
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "failure_capture": {
+      "type": "object",
+      "description": "Tool failure capture settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Capture tool failures"
+        },
+        "capture_stderr": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include stderr in failure capture"
+        },
+        "max_stderr_lines": {
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Max lines of stderr to capture"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "task_logging": {
+      "type": "object",
+      "description": "Task tool logging settings (for future sync integration)",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable task logging to .tasks_* file"
+        },
+        "include_legacy_todos": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include TodoWrite in task logs"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -115,10 +115,54 @@ class ToolInfo:
         return None
 
 
+# ============================================================================
+# Configuration Data Classes
+# ============================================================================
+
+@dataclass
+class PerformanceConfig:
+    """Performance tuning settings."""
+    max_file_size_for_line_search: int = 2 * 1024 * 1024  # 2MB
+    content_preview_length: int = 20
+
+
+@dataclass
+class ChannelConfig:
+    """Configuration for a single log channel."""
+    file_prefix: str
+    enabled: bool = True
+
+
+def _default_channels() -> dict[str, ChannelConfig]:
+    """Create default channel configurations."""
+    return {
+        "shell": ChannelConfig(file_prefix=".shell_"),
+        "sesslog": ChannelConfig(file_prefix=".sesslog_"),
+        "tasks": ChannelConfig(file_prefix=".tasks_"),
+    }
+
+
+def _default_category_routes() -> dict[str, list[str]]:
+    """Create default category to channel routing."""
+    return {
+        "_default": ["shell", "sesslog"],
+        "task": ["shell", "sesslog", "tasks"],
+    }
+
+
+@dataclass
+class RoutingConfig:
+    """Log routing configuration."""
+    channels: dict[str, ChannelConfig] = field(default_factory=_default_channels)
+    category_routes: dict[str, list[str]] = field(default_factory=_default_category_routes)
+    tool_overrides: dict[str, list[str]] = field(default_factory=dict)
+
+
 @dataclass
 class Config:
     """Logger configuration with all settings."""
 
+    # Display settings
     verbosity: int = 2
     datetime_mode: str = "full"  # "full", "date", "none"
     pwd_enabled: bool = False
@@ -146,6 +190,12 @@ class Config:
     failure_capture_enabled: bool = False
     failure_capture_stderr: bool = True
     failure_capture_max_lines: int = 50
+
+    # NEW: Performance settings
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
+
+    # NEW: Routing configuration
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
 
 
 @dataclass
@@ -830,6 +880,127 @@ def load_configuration(session_context: str) -> Config:
     return config
 
 
+class ConfigLoader:
+    """Load configuration from the new plugin settings location."""
+
+    CONFIG_DIR = Path.home() / ".claude" / "plugins" / "settings"
+    CONFIG_FILE = CONFIG_DIR / "session-logger.json"
+
+    @classmethod
+    def ensure_config_dir(cls) -> None:
+        """Ensure the config directory exists."""
+        cls.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def load(cls, session_context: str = "") -> Config:
+        """Load configuration with proper precedence.
+
+        Priority: Environment Variables > New Config > Legacy Config > Defaults
+        """
+        # Start with legacy config loading for backwards compatibility
+        config = load_configuration(session_context)
+
+        # Try to load new config file
+        if cls.CONFIG_FILE.exists():
+            try:
+                new_config = load_config_file(cls.CONFIG_FILE)
+                cls._apply_new_config(config, new_config)
+            except Exception as e:
+                debug_log(f"Error loading new config: {e}")
+
+        return config
+
+    @classmethod
+    def _apply_new_config(cls, config: Config, data: dict[str, Any]) -> None:
+        """Apply new config format settings."""
+        # Performance settings
+        perf = data.get("performance", {})
+        if isinstance(perf, dict):
+            if "max_file_size_for_line_search" in perf:
+                try:
+                    config.performance.max_file_size_for_line_search = int(
+                        perf["max_file_size_for_line_search"]
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if "content_preview_length" in perf:
+                try:
+                    val = int(perf["content_preview_length"])
+                    config.performance.content_preview_length = max(0, min(200, val))
+                except (ValueError, TypeError):
+                    pass
+
+        # Display settings (override legacy)
+        display = data.get("display", {})
+        if isinstance(display, dict):
+            if "verbosity" in display:
+                try:
+                    v = int(display["verbosity"])
+                    if 0 <= v <= 4:
+                        config.verbosity = v
+                except (ValueError, TypeError):
+                    pass
+            if "datetime" in display:
+                dt = display["datetime"]
+                if dt in ("full", "date", "none"):
+                    config.datetime_mode = dt
+            if "pwd" in display:
+                config.pwd_enabled = parse_bool(display["pwd"])
+
+        # Routing settings
+        routing = data.get("routing", {})
+        if isinstance(routing, dict):
+            # Channels
+            channels = routing.get("channels", {})
+            if isinstance(channels, dict):
+                for name, channel_data in channels.items():
+                    if isinstance(channel_data, dict) and "file_prefix" in channel_data:
+                        config.routing.channels[name] = ChannelConfig(
+                            file_prefix=channel_data["file_prefix"],
+                            enabled=channel_data.get("enabled", True)
+                        )
+
+            # Category routes
+            cat_routes = routing.get("category_routes", {})
+            if isinstance(cat_routes, dict):
+                for category, channels_list in cat_routes.items():
+                    if isinstance(channels_list, list):
+                        config.routing.category_routes[category] = channels_list
+
+            # Tool overrides
+            tool_overrides = routing.get("tool_overrides", {})
+            if isinstance(tool_overrides, dict):
+                for tool_name, channels_list in tool_overrides.items():
+                    if isinstance(channels_list, list):
+                        config.routing.tool_overrides[tool_name] = channels_list
+
+        # Action-only settings (override legacy)
+        action_only = data.get("action_only", {})
+        if isinstance(action_only, dict):
+            categories = action_only.get("categories", {})
+            if isinstance(categories, dict):
+                for cat, val in categories.items():
+                    config.action_only[cat] = parse_bool(val)
+            overrides = action_only.get("overrides", {})
+            if isinstance(overrides, dict):
+                for tool, val in overrides.items():
+                    config.action_only_overrides[tool] = str(val)
+
+        # Failure capture settings (override legacy)
+        failure = data.get("failure_capture", {})
+        if isinstance(failure, dict):
+            if "enabled" in failure:
+                config.failure_capture_enabled = parse_bool(failure["enabled"])
+            if "capture_stderr" in failure:
+                config.failure_capture_stderr = parse_bool(failure["capture_stderr"])
+            if "max_stderr_lines" in failure:
+                try:
+                    val = int(failure["max_stderr_lines"])
+                    config.failure_capture_max_lines = max(1, min(1000, val))
+                except (ValueError, TypeError):
+                    pass
+
+
 # ============================================================================
 # Filtering Logic
 # ============================================================================
@@ -921,19 +1092,33 @@ def get_task_content(tool_name: str, raw_json: dict[str, Any]) -> str:
     return tool_name
 
 
-def find_line_number(file_path: str, search_string: str, max_file_size: int = 2 * 1024 * 1024) -> int | None:
+def find_line_number(
+    file_path: str,
+    search_string: str,
+    max_file_size: Optional[int] = None,
+    config: Optional[Config] = None
+) -> int | None:
     """Find the starting line number of a string in a file.
 
     Args:
         file_path: Path to the file to search
         search_string: The string to find
-        max_file_size: Skip files larger than this (default 1MB)
+        max_file_size: Skip files larger than this (overrides config)
+        config: Config object to get max_file_size from
 
     Returns:
         Line number (1-indexed) or None if not found/error
     """
     if not search_string:
         return None
+
+    # Determine max file size: explicit param > config > default
+    if max_file_size is None:
+        if config is not None:
+            max_file_size = config.performance.max_file_size_for_line_search
+        else:
+            max_file_size = 2 * 1024 * 1024  # 2MB default
+
     try:
         path = Path(file_path)
         # Skip large files for performance
@@ -950,18 +1135,30 @@ def find_line_number(file_path: str, search_string: str, max_file_size: int = 2 
         return None
 
 
-def truncate_preview(text: str, max_len: int = 20) -> str:
+def truncate_preview(
+    text: str,
+    max_len: Optional[int] = None,
+    config: Optional[Config] = None
+) -> str:
     """Create a safe, single-line preview of content.
 
     Args:
         text: The content to preview
-        max_len: Maximum length before truncation (default 20)
+        max_len: Maximum length before truncation (overrides config)
+        config: Config object to get content_preview_length from
 
     Returns:
         A truncated, escaped preview string
     """
     if not text:
         return ""
+
+    # Determine max length: explicit param > config > default
+    if max_len is None:
+        if config is not None:
+            max_len = config.performance.content_preview_length
+        else:
+            max_len = 20  # default
     # Escape newlines for single-line display
     text = text.replace('\r\n', '\\n').replace('\n', '\\n').replace('\r', '')
     # Replace non-printable chars with ?
@@ -972,7 +1169,7 @@ def truncate_preview(text: str, max_len: int = 20) -> str:
     return text
 
 
-def get_command_content(tool_info: ToolInfo) -> str:
+def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) -> str:
     """Extract command content based on tool type."""
     tool_input = tool_info.input
 
@@ -1008,7 +1205,7 @@ def get_command_content(tool_info: ToolInfo) -> str:
     elif tool_info.name == "Write":
         path = tool_input.get("file_path", "")
         content = tool_input.get("content", "")
-        preview = truncate_preview(content)
+        preview = truncate_preview(content, config=config)
         line_count = len(content.splitlines()) if content else 0
         line_info = f" ({line_count}L)" if line_count > 0 else ""
         if path and preview:
@@ -1019,7 +1216,7 @@ def get_command_content(tool_info: ToolInfo) -> str:
         path = tool_input.get("file_path", "")
         old_string = tool_input.get("old_string", "")
         new_string = tool_input.get("new_string", "")
-        preview = truncate_preview(new_string)
+        preview = truncate_preview(new_string, config=config)
         # Calculate line delta
         old_lines = len(old_string.splitlines()) if old_string else 0
         new_lines = len(new_string.splitlines()) if new_string else 0
@@ -1028,7 +1225,7 @@ def get_command_content(tool_info: ToolInfo) -> str:
         else:
             line_info = f" (-{old_lines}/+{new_lines}L)"
         # Find line number for clickable file:line format
-        line_num = find_line_number(path, new_string) if path and new_string else None
+        line_num = find_line_number(path, new_string, config=config) if path and new_string else None
         path_with_line = f"{path}:{line_num}" if line_num else path
         if path and preview:
             return f'"{path_with_line}" \u2190 "{preview}"{line_info}'
@@ -1322,8 +1519,9 @@ def _write_to_overflow(file_path: Path, content: str, add_gap: bool) -> None:
 # File Reconciliation - Retroactive Session Name Renaming
 # ============================================================================
 
-# Session marker signature - used to count run numbers
-SESSION_MARKER_SIGNATURE = "═══ SESSION"
+# Session marker signatures - used to count run/compaction numbers
+SESSION_MARKER_SIGNATURE = "═══ SESSION START"
+COMPACTION_MARKER_SIGNATURE = "═══ CONTEXT COMPACTED"
 
 
 # ============================================================================
@@ -1754,7 +1952,17 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
 
 
 def count_session_markers(file_path: Path) -> int:
-    """Count existing SESSION START markers in file."""
+    """Count existing SESSION START markers in file (excludes compaction markers)."""
+    return _count_markers(file_path, SESSION_MARKER_SIGNATURE)
+
+
+def count_compaction_markers(file_path: Path) -> int:
+    """Count existing CONTEXT COMPACTED markers in file."""
+    return _count_markers(file_path, COMPACTION_MARKER_SIGNATURE)
+
+
+def _count_markers(file_path: Path, signature: str) -> int:
+    """Count markers matching a specific signature in a log file."""
     if not file_path.exists():
         return 0
 
@@ -1762,7 +1970,7 @@ def count_session_markers(file_path: Path) -> int:
     try:
         with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
             for line in f:
-                if SESSION_MARKER_SIGNATURE in line:
+                if signature in line:
                     count += 1
     except Exception:
         return 0
@@ -1819,20 +2027,35 @@ def mark_session_started(session_id: str) -> None:
 
 def write_session_marker(
     file_path: Path,
-    run_number: int,
+    marker_number: int,
     event_time: datetime,
-    session_name: Optional[str] = None
+    session_name: Optional[str] = None,
+    source: Optional[str] = None
 ) -> None:
-    """Write a visual marker indicating a new session run.
+    """Write a visual marker indicating a new session run or context compaction.
 
-    Includes session name to track renames over time.
+    Args:
+        file_path: Path to log file
+        marker_number: Run # for session starts, Compaction # for compactions
+        event_time: Timestamp for the marker
+        session_name: Session name to display
+        source: Source of the event ('compact' for context compaction, else session start)
     """
     timestamp_str = event_time.strftime('%Y-%m-%d %H:%M:%S')
     name_part = session_name if session_name else "(unnamed)"
+
+    # Determine marker type and counter label based on source (#14)
+    if source == "compact":
+        marker_type = "CONTEXT COMPACTED"
+        counter_label = f"Compaction #{marker_number}"
+    else:
+        marker_type = "SESSION START"
+        counter_label = f"Run #{marker_number}"
+
     marker = f"""
 
 ════════════════════════════════════════════════════════════════════════════════
-═══ SESSION START  •  {timestamp_str}  •  Run #{run_number}  •  {name_part}
+═══ {marker_type}  •  {timestamp_str}  •  {counter_label}  •  {name_part}
 ════════════════════════════════════════════════════════════════════════════════
 
 """
@@ -1941,51 +2164,114 @@ class SessionLogger:
         """Path to task history file (.tasks_*)."""
         return self._get_file_path("tasks")
 
+    def _get_channels_for_tool(self, tool_name: str, category: str) -> list[str]:
+        """Determine which channels a tool should write to based on routing config."""
+        # Check tool-specific override first
+        if tool_name in self.config.routing.tool_overrides:
+            return self.config.routing.tool_overrides[tool_name]
+        # Fall back to category route
+        if category in self.config.routing.category_routes:
+            return self.config.routing.category_routes[category]
+        # Default route
+        return self.config.routing.category_routes.get("_default", ["shell", "sesslog"])
+
+    def _get_channel_path(self, channel_name: str) -> Path:
+        """Get file path for a named channel."""
+        channel = self.config.routing.channels.get(channel_name)
+        if not channel:
+            # Fall back to built-in file types
+            if channel_name in ("shell", "sesslog", "tasks"):
+                return self._get_file_path(channel_name)
+            raise ValueError(f"Unknown channel: {channel_name}")
+
+        # Use session context for filename
+        if channel_name == "tasks":
+            filename = f"{channel.file_prefix}{self.session.get_task_filename_context()}.log"
+        else:
+            filename = f"{channel.file_prefix}{self.session.get_filename_context()}.log"
+        return self.session_dir / filename
+
     def _maybe_write_session_marker(self) -> None:
-        """Write session start marker if this is first call of a new run."""
+        """Write session start or compaction marker if this is first call of a new run."""
         if not is_new_session_run(self.session.session_id):
             return  # Already wrote marker for this run
 
-        # Get run number by counting existing markers
-        run_number = get_run_number(self.session.session_id, self.unified_log_path)
+        # Read source from state file (#14 - distinguish compaction from true start)
+        source = None
+        source_file = Path.home() / ".claude" / "session-states" / f"{self.session.session_id}.source"
+        try:
+            if source_file.exists():
+                source = source_file.read_text().strip()
+                source_file.unlink()  # Clean up after reading
+        except Exception:
+            pass  # Fall back to default marker
+
+        # Determine the appropriate counter based on event type
+        if source == "compact":
+            # Count compaction markers separately (#14)
+            marker_number = count_compaction_markers(self.unified_log_path) + 1
+        else:
+            # Run number only increments for true session starts
+            marker_number = get_run_number(self.session.session_id, self.unified_log_path)
 
         # Write markers to shell and sesslog (not tasks)
-        # Include session name to track renames over time
-        write_session_marker(self.shell_log_path, run_number, self.event_time, self.effective_name)
-        write_session_marker(self.unified_log_path, run_number, self.event_time, self.effective_name)
+        write_session_marker(self.shell_log_path, marker_number, self.event_time, self.effective_name, source)
+        write_session_marker(self.unified_log_path, marker_number, self.event_time, self.effective_name, source)
 
         # Mark session as started
         mark_session_started(self.session.session_id)
 
-        debug_log(f"Wrote session marker: Run #{run_number}")
+        debug_log(f"Wrote {'compaction' if source == 'compact' else 'session'} marker: #{marker_number}")
 
-    def log_entry(self, entry: str, tool_category: str, task_content: Optional[str] = None,
-                  event_time: Optional[datetime] = None) -> None:
-        """Write entry to appropriate log files.
+    def log_entry(
+        self,
+        entry: str,
+        tool_name: str,
+        tool_category: str,
+        task_content: Optional[str] = None,
+        event_time: Optional[datetime] = None
+    ) -> None:
+        """Write entry to appropriate log files based on routing configuration.
 
         Args:
             entry: The formatted log entry string
+            tool_name: The name of the tool (for routing overrides)
             tool_category: The category of the tool (e.g., "task", "bash")
             task_content: Optional task-specific content for task tools
             event_time: The event timestamp (ensures consistency across channels)
         """
         ts = event_time or datetime.now()
 
-        # Check for time gaps using event_time
-        shell_gap = check_time_gap(self.shell_log_path, self.config.datetime_mode, ts)
-        unified_gap = check_time_gap(self.unified_log_path, self.config.datetime_mode, ts)
+        # Get channels to write to based on routing config
+        channels = self._get_channels_for_tool(tool_name, tool_category)
 
-        # Write to shell log
-        atomic_append(self.shell_log_path, entry, add_gap=shell_gap)
+        # Track time gaps per channel to avoid duplicate gap checks
+        gap_cache: dict[Path, bool] = {}
 
-        # Write to unified log
-        atomic_append(self.unified_log_path, entry, add_gap=unified_gap)
+        for channel_name in channels:
+            # Check if channel is enabled
+            channel = self.config.routing.channels.get(channel_name)
+            if channel and not channel.enabled:
+                continue
 
-        # Write to task log if task tool (use same event_time for consistency)
-        if tool_category == "task" and task_content:
-            datetime_part = format_datetime(self.config.datetime_mode, ts)
-            task_entry = f"{datetime_part}{{{task_content} }}"
-            atomic_append(self.task_log_path, task_entry)
+            try:
+                file_path = self._get_channel_path(channel_name)
+            except ValueError:
+                debug_log(f"Skipping unknown channel: {channel_name}")
+                continue
+
+            # Check for time gap (cache to avoid repeated checks)
+            if file_path not in gap_cache:
+                gap_cache[file_path] = check_time_gap(file_path, self.config.datetime_mode, ts)
+            add_gap = gap_cache[file_path]
+
+            # Special handling for tasks channel - use task_content format
+            if channel_name == "tasks" and task_content:
+                datetime_part = format_datetime(self.config.datetime_mode, ts)
+                task_entry = f"{datetime_part}{{{task_content} }}"
+                atomic_append(file_path, task_entry, add_gap=add_gap)
+            else:
+                atomic_append(file_path, entry, add_gap=add_gap)
 
     def log_failure(self, failure_entry: str) -> None:
         """Log a failure entry to history files."""
@@ -2143,6 +2429,12 @@ def main() -> None:
     hook_event_name = json_input.get("hook_event_name", "PostToolUse")
     debug_log(f"Hook event: {hook_event_name}")
 
+    # Log source field for SessionStart events to investigate compaction detection (#14)
+    if hook_event_name == "SessionStart":
+        source = json_input.get("source", "unknown")
+        model = json_input.get("model", "unknown")
+        debug_log(f"SessionStart source: {source}, model: {model}")
+
     # Parse tool info
     tool_info = ToolInfo.from_json(json_input)
 
@@ -2162,16 +2454,25 @@ def main() -> None:
     # (fixes #9 - session resume detection)
     if hook_event_name == "SessionStart":
         state_dir = Path.home() / ".claude" / "session-states"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        source = json_input.get("source", "unknown")
         # Clear .started flag so marker gets written
         started_flag = state_dir / f"{tool_info.session_id}.started"
-        # Clear .run cache so run number is recounted from log file
-        run_cache = state_dir / f"{tool_info.session_id}.run"
+        # Save source for marker text (#14 - distinguish compaction from true start)
+        source_file = state_dir / f"{tool_info.session_id}.source"
         try:
             started_flag.unlink(missing_ok=True)
-            run_cache.unlink(missing_ok=True)
-            debug_log(f"Cleared .started and .run flags for session resume")
+            # Only clear .run cache for true session starts, not compactions (#14)
+            if source != "compact":
+                run_cache = state_dir / f"{tool_info.session_id}.run"
+                run_cache.unlink(missing_ok=True)
+                debug_log(f"Cleared .started/.run flags, saved source={source}")
+            else:
+                debug_log(f"Cleared .started flag (compaction, .run preserved), saved source={source}")
+            # Write source value for next PostToolUse to read
+            source_file.write_text(source)
         except Exception as e:
-            debug_log(f"Could not clear session flags: {e}")
+            debug_log(f"Could not update session flags: {e}")
 
     # Build session context
     session_context = build_session_context(tool_info)
@@ -2221,7 +2522,7 @@ def main() -> None:
         return
 
     # Extract command content
-    command_content = get_command_content(tool_info)
+    command_content = get_command_content(tool_info, config)
 
     # Generate entry (using captured event_time for consistency)
     entry = generate_entry(tool_info, config, command_content, event_time)
@@ -2235,7 +2536,7 @@ def main() -> None:
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init
     logger = SessionLogger(config, session_context, event_time)
-    logger.log_entry(entry, tool_category, task_content, event_time)
+    logger.log_entry(entry, tool_info.name, tool_category, task_content, event_time)
 
     # Check for failures (Bash only, uses same event_time)
     detect_and_log_failure(tool_info, config, logger, event_time)

@@ -5,9 +5,16 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2026-02-01
+## [0.1.6] - 2026-02-12
 
 ### Added
+- **Configuration system** (#1): User-configurable logging with JSON Schema validation
+  - Config location: `~/.claude/plugins/settings/session-logger.json`
+  - Performance settings: `max_file_size_for_line_search`, `content_preview_length`
+  - Display settings: `verbosity`, `datetime`, `pwd`
+  - Routing configuration: channels, category routes, tool overrides
+  - JSON Schema at `hooks/schemas/session-logger.schema.json` for IDE autocompletion
+  - Zero-config backwards compatible (all defaults match previous behavior)
 - **Read line range logging**: Read tool now shows offset/limit as clickable line references
   - Format: `{Read: "path:100-149" }` for offset=100, limit=50
   - Format: `{Read: "path:100" }` for offset only
