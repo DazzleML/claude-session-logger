@@ -44,16 +44,31 @@ def _ensure_dazzle_filekit():
         except (OSError, ValueError):
             pass  # Sentinel unreadable, retry install
 
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet", "dazzle-filekit>=0.2.1"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=30,
-        )
-        # Clean up sentinel on success
+    # Escalating install strategies:
+    # 1. Normal pip (Windows, Ubuntu 22.04, venvs)
+    # 2. --user (some systems where global is restricted)
+    # 3. --break-system-packages (Ubuntu 24.04+ with PEP 668)
+    pkg = "dazzle-filekit>=0.2.1"
+    strategies = [
+        [sys.executable, "-m", "pip", "install", "--quiet", pkg],
+        [sys.executable, "-m", "pip", "install", "--quiet", "--user", pkg],
+        [sys.executable, "-m", "pip", "install", "--quiet", "--break-system-packages", pkg],
+    ]
+
+    installed = False
+    for cmd in strategies:
+        try:
+            subprocess.check_call(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30,
+            )
+            installed = True
+            break
+        except Exception:
+            continue
+
+    if installed:
         sentinel.unlink(missing_ok=True)
-    except Exception:
+    else:
         # Mark failure to avoid hammering pip on every hook call
         try:
             sentinel.parent.mkdir(parents=True, exist_ok=True)

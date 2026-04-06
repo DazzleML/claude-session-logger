@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def install(check_only: bool = False, force: bool = False) -> bool:
     # Files to install (source path relative to this script, destination relative to ~/.claude/)
     files = [
         ("hooks/scripts/log-command.py", "hooks/log-command.py"),
+        ("hooks/scripts/run-hook.mjs", "hooks/run-hook.mjs"),
         ("hooks/scripts/rename_session.py", "hooks/rename_session.py"),
         ("commands/renameAI.md", "commands/renameAI.md"),
         ("commands/sessioninfo.md", "commands/sessioninfo.md"),
@@ -76,12 +78,33 @@ def install(check_only: bool = False, force: bool = False) -> bool:
     print()
     print(f"Installed: {installed}, Skipped: {skipped}")
 
+    # Install required Python dependency
+    if not check_only and installed > 0:
+        print()
+        print("Installing dazzle-filekit...")
+        pkg = "dazzle-filekit>=0.2.1"
+        strategies = [
+            [sys.executable, "-m", "pip", "install", pkg],
+            [sys.executable, "-m", "pip", "install", "--user", pkg],
+            [sys.executable, "-m", "pip", "install", "--break-system-packages", pkg],
+        ]
+        dep_installed = False
+        for cmd in strategies:
+            try:
+                subprocess.check_call(cmd, timeout=30)
+                dep_installed = True
+                break
+            except Exception:
+                continue
+        if not dep_installed:
+            print("  WARNING: Could not install dazzle-filekit automatically.")
+            print("  Please install manually: pip install dazzle-filekit")
+
     if installed > 0:
         print()
         print("Next steps:")
         print("  1. Add hooks to ~/.claude/settings.json (see README.md)")
-        print("  2. Optionally install dazzle-filekit: pip install dazzle-filekit")
-        print("  3. Restart Claude Code")
+        print("  2. Restart Claude Code")
 
     return True
 

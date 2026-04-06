@@ -5,6 +5,18 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-04-06
+
+### Fixed
+- **Escalating pip install for PEP 668** (#18): `_ensure_dazzle_filekit()` now tries three strategies:
+  1. Normal `pip install` (Windows, venvs, Ubuntu 22.04)
+  2. `pip install --user` (restricted global installs)
+  3. `pip install --break-system-packages` (Ubuntu 24.04+ with PEP 668)
+- **install.py now installs dazzle-filekit** (#18): Changed from "Optionally install" to actually installing with the same escalating strategy
+
+### Changed
+- Added `run-hook.mjs` to `install.py` file list for manual installations
+
 ## [0.1.8] - 2026-04-06
 
 ### Changed
