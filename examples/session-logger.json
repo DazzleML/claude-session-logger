@@ -3,7 +3,8 @@
 
   "performance": {
     "max_file_size_for_line_search": 2097152,
-    "content_preview_length": 20
+    "content_preview_length": 20,
+    "task_description_length": 0
   },
 
   "display": {

@@ -5,6 +5,29 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-06
+
+### Added
+- **Auto-install dazzle-filekit** (#18): Automatically installs `dazzle-filekit>=0.2.1` if missing
+  - Sentinel file prevents repeated pip attempts if install fails
+  - Retries after 1 hour in case failure was transient
+- **Task description length config**: New `task_description_length` performance setting
+  - `0` = no truncation (default), any positive integer = max characters
+  - JSON Schema and example config updated
+- **Resilient error handling**: Top-level exception handler wraps `main()`
+  - Logs fatal errors to `hook-debug.log` instead of crashing
+  - Outputs `{"continue": true}` so Claude Code is never blocked by hook failure
+
+### Fixed
+- **Task file proliferation** (#15): Unified `get_task_filename_context()` to delegate to `get_filename_context()`
+  - Eliminates divergent `__` (double underscore) separator before username
+  - Task logs now use same filename pattern as sesslog and shell channels
+  - Stops the rename-create-sequence cycle that produced 100+ files per session
+
+### Changed
+- `get_task_content()` now accepts optional `Config` parameter for configurable truncation
+- Removed hardcoded 100-character truncation from TaskCreate descriptions
+
 ## [0.1.6] - 2026-02-12
 
 ### Added

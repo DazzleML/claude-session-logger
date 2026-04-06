@@ -25,6 +25,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+def _ensure_dazzle_filekit():
+    """Auto-install dazzle-filekit if missing (e.g. running inside a venv)."""
+    try:
+        import dazzle_filekit  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    # Avoid retrying on every hook call if install previously failed
+    sentinel = Path.home() / ".claude" / "logs" / ".dazzle_filekit_install_failed"
+    if sentinel.exists():
+        # Check age -- retry after 1 hour in case issue was transient
+        try:
+            age_seconds = (datetime.now() - datetime.fromtimestamp(sentinel.stat().st_mtime)).total_seconds()
+            if age_seconds < 3600:
+                raise ImportError("dazzle-filekit install previously failed (retry in <1hr)")
+        except (OSError, ValueError):
+            pass  # Sentinel unreadable, retry install
+
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet", "dazzle-filekit>=0.2.1"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+        )
+        # Clean up sentinel on success
+        sentinel.unlink(missing_ok=True)
+    except Exception:
+        # Mark failure to avoid hammering pip on every hook call
+        try:
+            sentinel.parent.mkdir(parents=True, exist_ok=True)
+            sentinel.touch()
+        except OSError:
+            pass
+        raise ImportError("Failed to auto-install dazzle-filekit")
+
+_ensure_dazzle_filekit()
 from dazzle_filekit import normalize_cross_platform_path, create_symlink
 
 # Debug logging - use persistent location under ~/.claude
@@ -124,6 +162,7 @@ class PerformanceConfig:
     """Performance tuning settings."""
     max_file_size_for_line_search: int = 2 * 1024 * 1024  # 2MB
     content_preview_length: int = 20
+    task_description_length: int = 0  # 0 = full (no truncation)
 
 
 @dataclass
@@ -219,15 +258,16 @@ class SessionContext:
             return f"{self.shell_type}_{self.session_id}_{self.username}"
 
     def get_task_filename_context(self) -> str:
-        """Generate task filename context with consistent double-underscore separators.
+        """Generate task filename context.
 
-        Format (with name): {shell}__{name}__{session_id}__{username}
-        Format (without):   {shell}__{session_id}__{username}
+        Delegates to get_filename_context() to ensure naming consistency
+        across all channels. The channel prefix (.tasks_ vs .sesslog_)
+        provides file type differentiation.
+
+        Previously used __ (double underscore) before username which
+        diverged from build_filename() causing file proliferation (#15).
         """
-        if self.session_name:
-            return f"{self.shell_type}__{self.session_name}__{self.session_id}__{self.username}"
-        else:
-            return f"{self.shell_type}__{self.session_id}__{self.username}"
+        return self.get_filename_context()
 
 
 @dataclass
@@ -929,6 +969,12 @@ class ConfigLoader:
                     config.performance.content_preview_length = max(0, min(200, val))
                 except (ValueError, TypeError):
                     pass
+            if "task_description_length" in perf:
+                try:
+                    val = int(perf["task_description_length"])
+                    config.performance.task_description_length = max(0, val)
+                except (ValueError, TypeError):
+                    pass
 
         # Display settings (override legacy)
         display = data.get("display", {})
@@ -1034,14 +1080,20 @@ def should_use_action_only(tool_name: str, config: Config) -> bool:
 # ============================================================================
 
 
-def get_task_content(tool_name: str, raw_json: dict[str, Any]) -> str:
+def get_task_content(tool_name: str, raw_json: dict[str, Any],
+                     config: Optional[Config] = None) -> str:
     """Extract task-specific content for Task* tools."""
     tool_input = raw_json.get("tool_input", {})
     tool_response = raw_json.get("tool_response", {})
 
+    # Get task description truncation limit (0 = full, no truncation)
+    max_desc = 0
+    if config is not None:
+        max_desc = config.performance.task_description_length
+
     if tool_name == "TaskCreate":
         subject = tool_input.get("subject", "(no subject)")
-        description = tool_input.get("description", "")[:100]
+        description = tool_input.get("description", "")
 
         # Extract task ID from tool_response
         task_id = ""
@@ -1053,7 +1105,9 @@ def get_task_content(tool_name: str, raw_json: dict[str, Any]) -> str:
         id_part = f" #{task_id}" if task_id else ""
 
         if description:
-            return f"CREATE{id_part}: {subject} | {description}..."
+            if max_desc > 0 and len(description) > max_desc:
+                description = description[:max_desc] + "..."
+            return f"CREATE{id_part}: {subject} | {description}"
         return f"CREATE{id_part}: {subject}"
 
     elif tool_name == "TaskUpdate":
@@ -1309,7 +1363,7 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
         return tool_input.get("prompt", "")
 
     elif tool_info.name in ("TaskCreate", "TaskUpdate", "TaskList", "TaskGet"):
-        return get_task_content(tool_info.name, tool_info.raw_json)
+        return get_task_content(tool_info.name, tool_info.raw_json, config)
 
     else:
         # For unknown tools, try common field names
@@ -2531,7 +2585,7 @@ def main() -> None:
     tool_category = categorize_tool(tool_info.name)
     task_content = None
     if tool_category == "task":
-        task_content = get_task_content(tool_info.name, tool_info.raw_json)
+        task_content = get_task_content(tool_info.name, tool_info.raw_json, config)
 
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init
@@ -2548,4 +2602,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Never block Claude Code -- log the error and continue
+        try:
+            DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with open(DEBUG_LOG, "a") as f:
+                f.write(f"{datetime.now()}: FATAL unhandled exception: {e}\n")
+        except Exception:
+            pass
+        print('{"continue": true}')

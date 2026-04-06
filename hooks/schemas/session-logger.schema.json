@@ -26,6 +26,12 @@
           "minimum": 0,
           "maximum": 200,
           "description": "Max characters for content preview in Write/Edit logs"
+        },
+        "task_description_length": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "description": "Max characters for task description in .tasks_* logs. 0 = no truncation (full text)"
         }
       },
       "additionalProperties": false
