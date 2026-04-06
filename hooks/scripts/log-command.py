@@ -1598,12 +1598,14 @@ COMPACTION_MARKER_SIGNATURE = "═══ CONTEXT COMPACTED"
 # ============================================================================
 
 
-def sanitize_dirname(name: str, max_len: int = 50) -> str:
+def sanitize_dirname(name: str, max_len: int = 200) -> str:
     """Sanitize session name for filesystem safety.
 
     Args:
         name: The session name to sanitize
-        max_len: Maximum length for the name portion
+        max_len: Maximum length for the name portion (default 200,
+                 callers should compute based on filesystem limit
+                 minus suffix overhead)
 
     Returns:
         Filesystem-safe version of the name
@@ -1709,28 +1711,45 @@ def reconcile_session_directory(sesslog_base: Path, session_id: str,
 
 def _rename_files_for_session_change(directory: Path, old_session_name: Optional[str],
                                       new_session_name: str, session_id: str) -> None:
-    """Rename all files in directory to reflect new session name.
+    """Rename log files in directory to reflect new session name.
 
-    Handles both unnamed→named and named→renamed transitions.
+    Handles both unnamed->named and named->renamed transitions.
     This is the file-level counterpart to directory renaming.
+
+    Only renames files matching the log filename pattern (.sesslog_*,
+    .shell_*, .tasks_*). Other files (transcript.jsonl, etc.) are
+    skipped to prevent corruption from substring replacement (#17).
     """
     if not directory.exists():
         return
+
+    # Only rename our log files -- skip transcript.jsonl and anything else
+    log_prefixes = (".sesslog_", ".shell_", ".tasks_")
 
     for f in directory.iterdir():
         if not f.is_file():
             continue
 
         old_name = f.name
+
+        # Skip files that aren't our log files
+        if not old_name.startswith(log_prefixes):
+            continue
+
         new_name = None
 
         if old_session_name:
-            # Named → Renamed: replace old name with new name
-            if old_session_name in old_name:
-                new_name = old_name.replace(old_session_name, new_session_name)
+            # Named -> Renamed: use targeted regex to replace session name
+            # only in its structural position (between __ delimiters before GUID)
+            # Pattern: .prefix_shell__{old_name}__{guid}_{user}...
+            escaped_old = re.escape(old_session_name)
+            escaped_id = re.escape(session_id)
+            pattern = rf"(?<=__){escaped_old}(?=__{escaped_id})"
+            if re.search(pattern, old_name):
+                new_name = re.sub(pattern, new_session_name, old_name)
         else:
-            # Unnamed → Named: insert name before GUID
-            # Pattern: .type_shell_{guid}_{user}[.log] → .type_shell__{name}__{guid}_{user}[.log]
+            # Unnamed -> Named: insert name before GUID
+            # Pattern: .type_shell_{guid}_{user}[.log] -> .type_shell__{name}__{guid}_{user}[.log]
             pattern = rf"^(\.[\w]+_[\w.]+)_{re.escape(session_id)}_"
             match = re.match(pattern, old_name)
             if match:
@@ -1763,8 +1782,13 @@ def build_session_directory(session_name: Optional[str], session_id: str,
     Returns:
         Directory name string (not full path)
     """
+    # Filesystem limit is 255 chars; compute budget for the name portion
+    # Suffix is: __{session_id}_{username}  (2 + len(id) + 1 + len(user))
+    suffix_len = 2 + len(session_id) + 1 + len(username)
+    max_name_len = max(255 - suffix_len, 20)  # floor of 20 to keep something readable
+
     if session_name:
-        safe_name = sanitize_dirname(session_name)
+        safe_name = sanitize_dirname(session_name, max_len=max_name_len)
         return f"{safe_name}__{session_id}_{username}"
     else:
         return f"__{session_id}_{username}"
