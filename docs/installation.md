@@ -4,11 +4,16 @@ This guide covers all installation methods for claude-session-logger.
 
 ## Prerequisites
 
+- **[Claude Code](https://code.claude.com/docs/en/getting-started)** (native installer) - The npm version is [deprecated](https://code.claude.com/docs/en/getting-started#deprecated-npm-installation) and has known issues with plugin variable expansion
 - **Python 3.9+** - Required for hook scripts
-- **Claude Code** - The Anthropic CLI tool
-- **dazzle-filekit** - Required Python package for cross-platform path handling
+- **dazzle-filekit** - Required Python package for cross-platform path handling (auto-installed by the hook if missing)
 
 ```bash
+# Install Claude Code (native installer)
+curl -fsSL https://claude.ai/install.sh | bash    # Linux/macOS
+irm https://claude.ai/install.ps1 | iex           # Windows PowerShell
+
+# Install Python dependency (optional -- hook auto-installs if missing)
 pip install dazzle-filekit
 ```
 
@@ -102,6 +107,7 @@ mkdir -p ~/.claude/hooks
 
 # Copy hook files
 cp hooks/scripts/log-command.py ~/.claude/hooks/
+cp hooks/scripts/run-hook.mjs ~/.claude/hooks/
 cp hooks/scripts/rename_session.py ~/.claude/hooks/
 ```
 
@@ -129,7 +135,7 @@ Add the following to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude/hooks/log-command.py"
+            "command": "node ~/.claude/hooks/run-hook.mjs"
           }
         ]
       }
@@ -140,7 +146,7 @@ Add the following to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "python ~/.claude/hooks/log-command.py"
+            "command": "node ~/.claude/hooks/run-hook.mjs"
           }
         ]
       }
@@ -174,10 +180,25 @@ If `claude plugin install` fails with "Plugin not found":
 
 ### Hooks not running
 
-1. Check that Python is in your PATH
-2. Verify the hook files are executable
+1. Check that Node.js and Python 3 are in your PATH
+2. On Linux/macOS, ensure `python3` is available (the hook launcher tries `python3` first)
 3. Check `~/.claude/logs/hook-debug.log` for errors
 4. Ensure plugin is enabled: `claude plugin list` should show `✔ enabled`
+
+### Hooks fail with path errors (npm-installed Claude Code)
+
+If hooks fail with errors like `/hooks/scripts/run-hook.mjs: not found` or similar path issues, you may be running the **npm-installed version** of Claude Code, which does not expand `${CLAUDE_PLUGIN_ROOT}` in plugin hook commands.
+
+**Fix:** Switch to the native Claude Code installer:
+
+```bash
+# Linux/macOS
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Then restart Claude Code
+```
+
+The native installer correctly expands plugin variables. The npm version is [deprecated by Anthropic](https://code.claude.com/docs/en/getting-started#deprecated-npm-installation) and has known plugin system issues. See the [migration guide](https://code.claude.com/docs/en/getting-started#migrate-from-npm-to-native) for switching.
 
 ### Missing dependencies
 
@@ -223,6 +244,7 @@ claude plugin marketplace remove dazzle-claude-plugins
 ```bash
 # Remove hook files
 rm ~/.claude/hooks/log-command.py
+rm ~/.claude/hooks/run-hook.mjs
 rm ~/.claude/hooks/rename_session.py
 
 # Remove command files

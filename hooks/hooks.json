@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log-command.py"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/run-hook.mjs"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/log-command.py"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/run-hook.mjs"
           }
         ]
       }

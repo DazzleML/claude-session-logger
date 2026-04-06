@@ -5,6 +5,19 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-06
+
+### Changed
+- **Cross-platform Node.js hook launcher** (#19): Replace direct `python` call with `node run-hook.mjs`
+  - `run-hook.mjs` finds Python 3 on any platform (`python3` on Unix, `python` on Windows)
+  - Eliminates backslash path issues on Linux
+  - Non-blocking: exits 0 with stderr message if Python not found
+  - Warns when `CLAUDE_PLUGIN_ROOT` env var is missing (npm-installed Claude Code)
+  - 60s timeout on Python subprocess
+  - Claude Code guarantees Node.js availability (it's a Node.js app)
+- Updated installation docs with official Anthropic links and npm migration guidance
+- Updated README with native installer requirement note
+
 ## [0.1.7] - 2026-04-06
 
 ### Added

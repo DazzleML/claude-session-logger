@@ -46,6 +46,8 @@ claude plugin marketplace add "./"
 claude plugin install session-logger@dazzle-claude-plugins
 ```
 
+**Note:** Requires the [native Claude Code installer](https://docs.anthropic.com/en/docs/claude-code/getting-started), not the npm version. See [Troubleshooting](docs/installation.md#hooks-fail-with-path-errors-npm-installed-claude-code) if hooks don't run.
+
 For more options and troubleshooting, see the [Installation Guide](docs/installation.md).
 
 ## Usage
@@ -136,6 +138,7 @@ claude-session-logger/
 │   ├── hooks.json
 │   └── scripts/
 │       ├── log-command.py
+│       ├── run-hook.mjs          # Cross-platform Node.js launcher
 │       └── rename_session.py
 ├── commands/                 # Plugin commands
 │   ├── renameAI.md
