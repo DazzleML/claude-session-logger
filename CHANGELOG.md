@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `scripts-local/hooks/pre-commit-basic` -- minimal version-only pre-commit fallback (was previously in `scripts-repo/` with stale wrong-project headers; rewritten as project-agnostic)
   Both files were rewritten to drop project-specific names (no references to any specific project) so they can be reused as drop-in fallbacks across DazzleTools/DazzleML repositories.
 
+### Removed
+- **`scripts-repo/` hand-maintained tooling** (#24, parent #20): Removed the entire `scripts-repo/` directory ahead of re-adding it as a git subtree from `git-repokit-common`. Two files in the previous `scripts-repo/` are not present upstream (`audit_codebase.py`, `hooks/pre-commit-basic`) -- those were preserved in `scripts-local/` in the previous commit. Backup tag `pre-subtree-migration-v0.1.11` retains the prior state for rollback.
+
 ## [0.1.11] - 2026-04-19
 
 ### Fixed
