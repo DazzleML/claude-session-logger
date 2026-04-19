@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# Basic pre-commit hook (VERSION ONLY) -- project-agnostic fallback.
+#
+# WARNING: This hook provides NO SECURITY PROTECTION.
+#
+# Features:
+# - Runs the version-update script from scripts-repo/ in --auto mode
+# - Format produced: VERSION_BRANCH_BUILD-YYYYMMDD-COMMITHASH
+#
+# Missing (compared to the standard pre-commit hook):
+# - NO branch protection
+# - NO private file detection
+# - NO file size limits
+# - NO debug statement checks
+#
+# For production use, install the standard pre-commit hook from
+# scripts-repo/install-hooks.sh instead.
+#
+
+set -e
+
+# Find the repository root (where .git is located)
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Path to the version update script provided by the upstream subtree
+UPDATE_SCRIPT="$REPO_ROOT/scripts-repo/update-version.sh"
+
+# Call the centralized version update script in auto mode
+if [ -f "$UPDATE_SCRIPT" ]; then
+    "$UPDATE_SCRIPT" --auto
+else
+    echo "[Version Hook] Warning: update-version.sh not found at $UPDATE_SCRIPT"
+    echo "[Version Hook] Version will not be updated"
+    # Don't fail the commit - just warn
+fi
+
+# Success - allow commit
+exit 0

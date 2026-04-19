@@ -5,6 +5,14 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`scripts-local/` directory with project-agnostic fallback tooling** (#24, parent #20): Established the project-local home for tooling that lives alongside the upcoming `scripts-repo/` git-repokit-common subtree. Initial contents:
+  - `scripts-local/audit_codebase.py` -- generic git-commit function-diff tool (was previously the only copy in `scripts-repo/`; not present upstream)
+  - `scripts-local/hooks/pre-commit-basic` -- minimal version-only pre-commit fallback (was previously in `scripts-repo/` with stale wrong-project headers; rewritten as project-agnostic)
+  Both files were rewritten to drop project-specific names (no references to any specific project) so they can be reused as drop-in fallbacks across DazzleTools/DazzleML repositories.
+
 ## [0.1.11] - 2026-04-19
 
 ### Fixed
