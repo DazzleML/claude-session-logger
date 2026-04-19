@@ -32,6 +32,12 @@
           "default": 0,
           "minimum": 0,
           "description": "Max characters for task description in .tasks_* logs. 0 = no truncation (full text)"
+        },
+        "skill_args_length": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 0,
+          "description": "Max characters for Skill tool args preview. 0 = name only, 100 = default preview"
         }
       },
       "additionalProperties": false

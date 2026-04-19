@@ -5,6 +5,17 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-04-19
+
+### Fixed
+- **Skill tool logged with empty content** (#22): `get_command_content()` had no specific handler for the `Skill` tool, causing all Skill invocations to log as `{Skill:  }` (empty). The generic fallback only checked fields `pattern, url, prompt, query, content` -- none of which match the Skill tool's actual `skill` and `args` fields.
+
+### Added
+- **`Skill` tool handler**: Logs skill name plus a configurable preview of args
+  - Format with args: `{Skill: <skill-name> <- "args preview..." }`
+  - Format without args: `{Skill: <skill-name> }`
+- **`skill_args_length` config option** (`performance.skill_args_length`): Max characters for the Skill args preview. Default `100`, `0` disables args entirely (name only). Schema updated.
+
 ## [0.1.10] - 2026-04-06
 
 ### Fixed

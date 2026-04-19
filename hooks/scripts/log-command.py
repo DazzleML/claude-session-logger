@@ -178,6 +178,7 @@ class PerformanceConfig:
     max_file_size_for_line_search: int = 2 * 1024 * 1024  # 2MB
     content_preview_length: int = 20
     task_description_length: int = 0  # 0 = full (no truncation)
+    skill_args_length: int = 100  # 0 = name only, 100 = default preview
 
 
 @dataclass
@@ -990,6 +991,12 @@ class ConfigLoader:
                     config.performance.task_description_length = max(0, val)
                 except (ValueError, TypeError):
                     pass
+            if "skill_args_length" in perf:
+                try:
+                    val = int(perf["skill_args_length"])
+                    config.performance.skill_args_length = max(0, val)
+                except (ValueError, TypeError):
+                    pass
 
         # Display settings (override legacy)
         display = data.get("display", {})
@@ -1376,6 +1383,15 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
 
     elif tool_info.name == "Task":
         return tool_input.get("prompt", "")
+
+    elif tool_info.name == "Skill":
+        skill_name = tool_input.get("skill", "")
+        skill_args = tool_input.get("args", "")
+        max_args = config.performance.skill_args_length if config else 100
+        if skill_args and max_args > 0:
+            preview = truncate_preview(skill_args, max_len=max_args, config=config)
+            return f'{skill_name} \u2190 "{preview}"'
+        return skill_name
 
     elif tool_info.name in ("TaskCreate", "TaskUpdate", "TaskList", "TaskGet"):
         return get_task_content(tool_info.name, tool_info.raw_json, config)
