@@ -1,0 +1,21 @@
+#!/bin/bash
+#
+# Post-commit hook (repokit-common)
+# Updates _version.py with the actual commit hash after commit is created
+#
+
+# Find the repository root
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+SYNC_SCRIPT="$REPO_ROOT/scripts/sync-versions.py"
+if [ -f "$SYNC_SCRIPT" ] && command -v python >/dev/null 2>&1; then
+    # Run without --auto to refresh hash with actual commit info
+    python "$SYNC_SCRIPT" > /dev/null 2>&1
+    echo "✓ Version updated with commit hash $(git rev-parse --short HEAD)"
+elif [ -f "$REPO_ROOT/scripts/update-version.sh" ]; then
+    # Fallback to legacy bash script
+    "$REPO_ROOT/scripts/update-version.sh" > /dev/null 2>&1
+    echo "✓ Version updated with commit hash $(git rev-parse --short HEAD)"
+fi
+
+exit 0

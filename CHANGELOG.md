@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **`scripts-repo/` hand-maintained tooling** (#24, parent #20): Removed the entire `scripts-repo/` directory ahead of re-adding it as a git subtree from `git-repokit-common`. Two files in the previous `scripts-repo/` are not present upstream (`audit_codebase.py`, `hooks/pre-commit-basic`) -- those were preserved in `scripts-local/` in the previous commit. Backup tag `pre-subtree-migration-v0.1.11` retains the prior state for rollback.
 
+### Changed
+- **`scripts-repo/` is now a git subtree from DazzleTools/git-repokit-common** (closes #24, parent #20): Added via `git subtree add --prefix=scripts-repo --squash`, pulling upstream `main`. Updates to upstream tooling can now be pulled with `git subtree pull --prefix=scripts-repo repokit-common main --squash` (the `repokit-common` remote was added for convenience). The previously-stale local copies of `pre-push` (with `folder_datetime_fix/` artifact), `install-hooks.sh` (hardcoded project name), and other dev scripts are now replaced by their upstream versions.
+
 ## [0.1.11] - 2026-04-19
 
 ### Fixed
