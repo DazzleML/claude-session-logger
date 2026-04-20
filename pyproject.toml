@@ -1,0 +1,57 @@
+# Project metadata for claude-session-logger.
+#
+# This file currently exists primarily to configure tooling from the
+# git-repokit-common subtree at scripts-repo/. The plugin itself is not
+# distributed as a Python package -- it is a Claude Code plugin installed
+# via marketplace -- so we do not declare PEP 621 [project] metadata here.
+#
+# If/when we publish a proper PyPI package, add a [project] section per
+# https://packaging.python.org/en/latest/specifications/pyproject-toml/
+
+[tool.repokit-common]
+# Source of truth for version components (MAJOR/MINOR/PATCH/PHASE).
+# Our version.py lives at the repo root, not inside a Python package.
+version-source = "version.py"
+
+# CHANGELOG file -- managed by sync-versions.py (compare links at bottom).
+changelog = "CHANGELOG.md"
+
+# Repo URL used for compare-link generation in CHANGELOG.
+repo-url = "https://github.com/DazzleML/claude-session-logger"
+
+# Tag prefix (so v0.2.0 instead of just 0.2.0).
+tag-prefix = "v"
+
+# Tag format:
+#   "human"  -> v0.2.3, v0.2.3-alpha
+#   "pep440" -> v0.2.3, v0.2.3a1
+# We use "human" to match the existing CHANGELOG section headers ([0.1.11]).
+tag-format = "human"
+
+# Project-specific extra version targets.
+#
+# This config field is NOT YET supported by upstream git-repokit-common's
+# sync-versions.py -- support is being added locally as part of #25 and
+# will be proposed upstream after our 0.2.0 ships. Until that lands here,
+# the entries below are inert.
+#
+# Each entry tells sync-versions.py to update version strings in additional
+# files alongside version.py:
+#   path  - file path relative to repo root
+#   type  - "json" (regex on "version" field), more types possible later
+#   field - JSON key to update (e.g., "version")
+#   match - "all" (every occurrence) or "first"
+#
+# The Claude Code plugin manifests have nested duplicate "version" keys
+# (top-level + inside "plugins" array), so we use match = "all".
+[[tool.repokit-common.extra-targets]]
+path = ".claude-plugin/plugin.json"
+type = "json"
+field = "version"
+match = "all"
+
+[[tool.repokit-common.extra-targets]]
+path = ".claude-plugin/marketplace.json"
+type = "json"
+field = "version"
+match = "all"

@@ -27,7 +27,11 @@ desktop.ini
 **/__private__*
 
 # Local development files
-local/
+# (Anchored to repo root so scripts-repo/local/ -- our designated tracked
+# location for project-local tooling inside the git-repokit-common subtree --
+# is not accidentally excluded. Per git docs, you cannot re-include files
+# whose parent directory has been excluded by a non-anchored pattern.)
+/local/
 .local/
 .dev/
 

@@ -29,8 +29,14 @@ desktop.ini
 /secrets/
 **/__private__*
 
-# Local development files
-local/
+# Local development files.
+# NOTE: We deliberately do NOT exclude a `local/` directory inside
+# scripts-repo/. That directory is the documented home for project-specific
+# tooling that lives inside the git-repokit-common subtree and SHOULD be
+# tracked by consuming projects (the convention from the local/ pattern
+# discussion). Excluding it -- whether via `local/` or `/local/` (which is
+# anchored to this .gitignore's location, scripts-repo/local/) -- would
+# silently break that convention.
 .local/
 .dev/
 

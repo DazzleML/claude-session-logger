@@ -8,10 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **`scripts-local/` directory with project-agnostic fallback tooling** (#24, parent #20): Established the project-local home for tooling that lives alongside the upcoming `scripts-repo/` git-repokit-common subtree. Initial contents:
-  - `scripts-local/audit_codebase.py` -- generic git-commit function-diff tool (was previously the only copy in `scripts-repo/`; not present upstream)
-  - `scripts-local/hooks/pre-commit-basic` -- minimal version-only pre-commit fallback (was previously in `scripts-repo/` with stale wrong-project headers; rewritten as project-agnostic)
-  Both files were rewritten to drop project-specific names (no references to any specific project) so they can be reused as drop-in fallbacks across DazzleTools/DazzleML repositories.
+- **`pyproject.toml`** (#25, parent #20): Configures the upstream `git-repokit-common` tooling at `scripts-repo/` for our project layout. Sets `version-source = "version.py"` (we use a root-level version file rather than the default `<package>/_version.py`), `tag-format = "human"` to match existing CHANGELOG section headers (`[0.1.11]`), and declares `[[tool.repokit-common.extra-targets]]` entries for our plugin JSON files. The `extra-targets` entries are inert until a forthcoming change to `scripts-repo/sync-versions.py` adds support; documented inline.
+- **`scripts-repo/local/` directory for project-local tooling** (#24, parent #20): Established a designated subdirectory inside the git-repokit-common subtree where project-specific or not-yet-upstreamed tools live. Avoids the structural noise of a sibling `scripts-local/` directory and gives projects a clear convention for "where do my project's local scripts go." Initial contents:
+  - `scripts-repo/local/audit_codebase.py` -- generic git-commit function-diff tool (was previously the only copy in the hand-maintained `scripts-repo/`; not present upstream proper)
+  - `scripts-repo/local/hooks/pre-commit-basic` -- minimal version-only pre-commit fallback (was previously in the hand-maintained `scripts-repo/` with stale wrong-project headers; rewritten as project-agnostic)
+  Both files were rewritten to drop project-specific names (no references to any specific project) so they can be reused as drop-in fallbacks across DazzleTools/DazzleML repositories. Originally placed in a sibling `scripts-local/` directory in commit `a9b0ed0`; moved into `scripts-repo/local/` in this commit per `2026-04-19__21-02-14__both_scripts-repo-local-pivot.md`.
 
 ### Removed
 - **`scripts-repo/` hand-maintained tooling** (#24, parent #20): Removed the entire `scripts-repo/` directory ahead of re-adding it as a git subtree from `git-repokit-common`. Two files in the previous `scripts-repo/` are not present upstream (`audit_codebase.py`, `hooks/pre-commit-basic`) -- those were preserved in `scripts-local/` in the previous commit. Backup tag `pre-subtree-migration-v0.1.11` retains the prior state for rollback.

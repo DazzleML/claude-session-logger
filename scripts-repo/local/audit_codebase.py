@@ -5,22 +5,24 @@ Codebase Audit Tool
 Compare functions between different git commits to track code evolution,
 identify missing functionality, and generate diff reports.
 
-Project-local fallback tooling. Lives under scripts-local/ so it survives
-subtree updates of scripts-repo/ from git-repokit-common.
+Project-local fallback tooling. Lives under scripts-repo/local/ -- a
+designated subdirectory inside the git-repokit-common subtree where
+project-specific or not-yet-upstreamed tools can live without colliding
+with future subtree pulls of upstream content.
 
 Usage (run from repo root):
-    python scripts-local/audit_codebase.py [baseline_commit] [current_commit]
-    python scripts-local/audit_codebase.py --help
+    python scripts-repo/local/audit_codebase.py [baseline_commit] [current_commit]
+    python scripts-repo/local/audit_codebase.py --help
 
 Examples:
     # Compare against a baseline commit
-    python scripts-local/audit_codebase.py <baseline_sha>
+    python scripts-repo/local/audit_codebase.py <baseline_sha>
 
     # Compare two specific commits
-    python scripts-local/audit_codebase.py <baseline_sha> HEAD
+    python scripts-repo/local/audit_codebase.py <baseline_sha> HEAD
 
     # Generate full report with diffs
-    python scripts-local/audit_codebase.py <baseline_sha> --full-diff
+    python scripts-repo/local/audit_codebase.py <baseline_sha> --full-diff
 """
 
 import subprocess
