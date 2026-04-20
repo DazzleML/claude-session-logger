@@ -100,14 +100,19 @@ def _load_config():
                         cfg.get("repo-url", _DEFAULT_REPO_URL),
                         cfg.get("tag-prefix", _DEFAULT_TAG_PREFIX),
                         tag_format,
+                        # extra-targets: project-specific files to receive the version.
+                        # Each entry is a dict with: path (required), type (default
+                        # "json"), field (default "version"), match ("first" | "all").
+                        # Strictly additive -- empty list = unchanged behavior.
+                        cfg.get("extra-targets", []),
                     )
             break
         check_dir = check_dir.parent
 
     return (_DEFAULT_VERSION_SOURCE, _DEFAULT_CHANGELOG_FILE, _DEFAULT_REPO_URL,
-            _DEFAULT_TAG_PREFIX, _DEFAULT_TAG_FORMAT)
+            _DEFAULT_TAG_PREFIX, _DEFAULT_TAG_FORMAT, [])
 
-VERSION_SOURCE, CHANGELOG_FILE, REPO_URL, TAG_PREFIX, TAG_FORMAT = _load_config()
+VERSION_SOURCE, CHANGELOG_FILE, REPO_URL, TAG_PREFIX, TAG_FORMAT, EXTRA_TARGETS = _load_config()
 # --------------------------------------------------------------------
 
 
@@ -523,6 +528,91 @@ def update_changelog_links(
 
 
 # ---------------------------------------------------------------------------
+# Extra-target version sync (project-specific files via pyproject.toml)
+# ---------------------------------------------------------------------------
+
+def update_extra_target(
+    target_spec: dict, new_version: str, root: Path, dry_run: bool = False
+) -> tuple[bool, str]:
+    """Update version in a project-specific extra target file.
+
+    target_spec is a dict from pyproject.toml [[tool.repokit-common.extra-targets]]:
+        path  (required) - file path relative to repo root
+        type  (default "json") - update strategy
+        field (default "version") - JSON key to update
+        match ("first" | "all", default "first") - how many occurrences
+
+    Returns (was_modified, message). On error, was_modified is False and
+    message describes the problem.
+    """
+    rel_path = target_spec.get("path")
+    if not rel_path:
+        return False, "extra-target missing 'path' field"
+
+    target_path = root / rel_path
+    if not target_path.exists():
+        return False, f"file not found: {rel_path}"
+
+    target_type = target_spec.get("type", "json")
+    field = target_spec.get("field", "version")
+    match_mode = target_spec.get("match", "first")
+
+    if target_type != "json":
+        return False, f"type '{target_type}' not yet supported (only 'json')"
+    if match_mode not in ("first", "all"):
+        return False, f"match must be 'first' or 'all', got '{match_mode}'"
+
+    content = target_path.read_text(encoding="utf-8")
+    original = content
+
+    # Match "field": "value" with whitespace tolerance; preserve quote style.
+    pattern = rf'("{re.escape(field)}"\s*:\s*")[^"]+(")'
+    count = 0 if match_mode == "all" else 1
+    content = re.sub(
+        pattern,
+        lambda m: f"{m.group(1)}{new_version}{m.group(2)}",
+        content,
+        count=count,
+    )
+
+    if content == original:
+        return False, "already in sync (or pattern not found)"
+
+    if not dry_run:
+        target_path.write_text(content, encoding="utf-8")
+    return True, "updated"
+
+
+def check_extra_target(target_spec: dict, expected_version: str, root: Path) -> tuple[bool, str]:
+    """Check whether an extra target has the expected version.
+
+    Returns (in_sync, message).
+    """
+    rel_path = target_spec.get("path")
+    if not rel_path:
+        return False, "extra-target missing 'path' field"
+
+    target_path = root / rel_path
+    if not target_path.exists():
+        return False, f"file not found: {rel_path}"
+
+    field = target_spec.get("field", "version")
+    content = target_path.read_text(encoding="utf-8")
+    pattern = rf'"{re.escape(field)}"\s*:\s*"([^"]+)"'
+    matches = re.findall(pattern, content)
+    if not matches:
+        return False, f"no '{field}' field found"
+
+    out_of_sync = [v for v in matches if v != expected_version]
+    if not out_of_sync:
+        return True, f"all {len(matches)} occurrence(s) at {expected_version}"
+    return False, (
+        f"{len(out_of_sync)} of {len(matches)} occurrence(s) out of sync: "
+        f"{out_of_sync} (expected {expected_version})"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Git helpers
 # ---------------------------------------------------------------------------
 
@@ -750,6 +840,35 @@ def main():
         else:
             if args.verbose:
                 print(f"  [OK] {VERSION_SOURCE}: __version__ in sync")
+
+    # --- Sync extra-targets (project-specific files via pyproject.toml) ---
+    # Strictly additive: if EXTRA_TARGETS is empty (no config), this loop is a
+    # no-op and behavior is identical to upstream-pristine sync-versions.py.
+    if EXTRA_TARGETS:
+        for target_spec in EXTRA_TARGETS:
+            label = target_spec.get("path", "<missing-path>")
+            if args.check:
+                in_sync, msg = check_extra_target(target_spec, current_version, root)
+                if not in_sync:
+                    all_synced = False
+                    print(f"  [X] {label}: {msg}")
+                elif args.verbose:
+                    print(f"  [OK] {label}: {msg}")
+            else:
+                modified, msg = update_extra_target(
+                    target_spec, current_version, root, args.dry_run
+                )
+                if modified:
+                    action = "would update" if args.dry_run else "updated"
+                    if not quiet:
+                        print(f"  [OK] {label}: {action} -> {current_version}")
+                    if label not in files_updated:
+                        files_updated.append(label)
+                elif "not found" in msg or "not yet supported" in msg or "must be" in msg:
+                    # Surface real errors; "already in sync" is silent unless verbose
+                    print(f"  [!!] {label}: {msg}")
+                elif args.verbose:
+                    print(f"  [OK] {label}: {msg}")
 
     # --- Sync CHANGELOG.md compare links ---
     changelog_path = root / CHANGELOG_FILE

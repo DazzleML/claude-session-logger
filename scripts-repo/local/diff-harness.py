@@ -109,6 +109,31 @@ def clone_copy(src_repo: Path, dest: Path, ref: str, verbose: bool) -> None:
     run(["git", "checkout", ref], cwd=dest, verbose=verbose)
 
 
+def overlay_worktree(src_repo: Path, dest: Path, verbose: bool) -> int:
+    """Overlay src_repo's working-tree files onto dest, excluding .git/.
+
+    Use this when you want to test uncommitted changes -- after cloning the
+    NEW copy from HEAD, overlay the actual working tree to capture in-progress
+    edits. Skips .git/, common cache dirs, and the test sandbox dir patterns.
+
+    Returns count of files copied.
+    """
+    skip_dirs = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules"}
+    count = 0
+    for item in src_repo.rglob("*"):
+        if any(part in skip_dirs for part in item.relative_to(src_repo).parts):
+            continue
+        if item.is_file():
+            rel = item.relative_to(src_repo)
+            target = dest / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            count += 1
+    if verbose:
+        print(f"  Overlaid {count} working-tree file(s) onto {dest}")
+    return count
+
+
 def disable_hooks(repo: Path, verbose: bool) -> None:
     """Remove pre-commit / post-commit / pre-push hooks so test ops don't trigger them."""
     hooks_dir = repo / ".git" / "hooks"
@@ -270,6 +295,15 @@ def main() -> int:
         default=DEFAULT_OLD_REF,
         help=f"Git ref for OLD copy (default: {DEFAULT_OLD_REF})",
     )
+    parser.add_argument(
+        "--use-worktree",
+        action="store_true",
+        help=(
+            "Overlay the source repo's WORKING TREE onto the NEW copy (after the "
+            "HEAD clone). Use this to test uncommitted changes without committing "
+            "first. The OLD copy is untouched (always reflects the --old-ref tag)."
+        ),
+    )
     args = parser.parse_args()
 
     src_repo = find_repo_root(Path.cwd())
@@ -306,6 +340,9 @@ def main() -> int:
         clone_copy(src_repo, old_copy, args.old_ref, args.verbose)
         print(f"\n[2/5] Cloning NEW copy at HEAD...")
         clone_copy(src_repo, new_copy, "HEAD", args.verbose)
+        if args.use_worktree:
+            print("       --use-worktree: overlaying source working tree onto NEW copy...")
+            overlay_worktree(src_repo, new_copy, args.verbose)
 
         # 2. Disable hooks in both
         print("\n[3/5] Disabling hooks in both copies...")
