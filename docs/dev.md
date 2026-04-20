@@ -28,14 +28,24 @@ claude-session-logger/
 │   └── scripts/
 │       └── log-command.py    # Main logging logic
 ├── commands/                 # Slash commands (/renameAI, /sessioninfo)
-├── scripts-repo/             # Development scripts
-│   ├── sync-versions.py      # Version synchronization
-│   └── update-version.sh     # Git version string updater
+├── scripts-repo/             # Git subtree from DazzleTools/git-repokit-common
+│   ├── sync-versions.py      # Version sync (configured via pyproject.toml)
+│   ├── update-version.sh     # Legacy git version string updater
+│   ├── install-hooks.sh      # Install git hooks (pre-commit, etc.)
+│   ├── hooks/                # Pre-commit / post-commit / pre-push hooks
+│   └── local/                # Project-local tooling (not from upstream)
+│       ├── audit_codebase.py    # git-commit function-diff tool
+│       ├── dev-refresh.py       # Clear plugin cache during development
+│       ├── diff-harness.py      # Differential test harness
+│       └── hooks/pre-commit-basic
+├── pyproject.toml            # Configures repokit-common (version-source, extra-targets, etc.)
 ├── version.py                # Canonical version source (MAJOR.MINOR.PATCH)
 └── docs/
     ├── installation.md       # User installation guide
     └── dev.md                # This file
 ```
+
+`scripts-repo/` is a git subtree from [DazzleTools/git-repokit-common](https://github.com/DazzleTools/git-repokit-common). To update from upstream: `git subtree pull --prefix=scripts-repo repokit-common main --squash`. Project-local tooling that doesn't belong upstream lives in `scripts-repo/local/` (a designated subdirectory tracked despite the upstream's gitignore conventions).
 
 ## Version Management
 
