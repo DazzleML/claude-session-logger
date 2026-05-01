@@ -94,12 +94,13 @@
           "default": {
             "shell": {"file_prefix": ".shell_", "enabled": true},
             "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
-            "tasks": {"file_prefix": ".tasks_", "enabled": true}
+            "tasks": {"file_prefix": ".tasks_", "enabled": true},
+            "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
           }
         },
         "category_routes": {
           "type": "object",
-          "description": "Map tool categories to channels. Use '_default' for fallback.",
+          "description": "Map tool categories to channels. Use '_default' for fallback. Use 'unknown' for uncategorized tools (those without a specific TOOL_CATEGORIES entry).",
           "additionalProperties": {
             "type": "array",
             "items": {"type": "string"},
@@ -107,7 +108,8 @@
           },
           "default": {
             "_default": ["shell", "sesslog"],
-            "task": ["shell", "sesslog", "tasks"]
+            "task": ["shell", "sesslog", "tasks"],
+            "unknown": ["sesslog", "unknowns"]
           }
         },
         "tool_overrides": {

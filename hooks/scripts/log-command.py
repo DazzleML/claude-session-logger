@@ -83,6 +83,42 @@ from dazzle_filekit import normalize_cross_platform_path, create_symlink
 # Debug logging - use persistent location under ~/.claude
 DEBUG_LOG = Path.home() / ".claude" / "logs" / "hook-debug.log"
 
+# Throttle directory for "unknown tool encountered" warnings. Each unknown
+# tool name gets a sentinel file on first sighting; subsequent invocations
+# (across hook subprocesses, not just within one process) skip the warning.
+# Delete the directory or individual sentinels to re-trigger warnings.
+UNKNOWN_TOOL_WARN_DIR = Path.home() / ".claude" / "logs" / ".unknown_tool_warnings"
+
+
+def _warn_unknown_tool_once(tool_name: str, fields: list[str]) -> None:
+    """Log a one-time warning when an unknown tool's content extraction fails.
+
+    Uses a sentinel file (cross-process throttling) so that multiple hook
+    invocations don't spam hook-debug.log. Sentinel creation is atomic
+    (O_CREAT|O_EXCL via mode "x") to prevent the TOCTOU race where two
+    parallel hook subprocesses both pass an `exists()` check and then both
+    write the warning. Best-effort — silent on errors so the hook itself
+    never breaks.
+    """
+    try:
+        UNKNOWN_TOOL_WARN_DIR.mkdir(parents=True, exist_ok=True)
+        # Sanitize tool name for filesystem safety
+        safe_name = re.sub(r"[^A-Za-z0-9_\-.]", "_", tool_name)
+        sentinel = UNKNOWN_TOOL_WARN_DIR / f"{safe_name}.warned"
+        # Atomic exclusive create: succeeds exactly once across all processes
+        try:
+            sentinel.open("x").close()
+        except FileExistsError:
+            return  # Another process won the race; warning already logged
+        debug_log(
+            f"Unknown tool '{tool_name}' encountered with no extractable "
+            f"content - input fields: {fields} - "
+            f"add a specific handler in get_command_content() or expand the "
+            f"fallback list in the else branch"
+        )
+    except Exception:
+        pass  # Throttling is best-effort; never break the hook
+
 
 def debug_log(message: str) -> None:
     """Append debug message to log file."""
@@ -194,6 +230,7 @@ def _default_channels() -> dict[str, ChannelConfig]:
         "shell": ChannelConfig(file_prefix=".shell_"),
         "sesslog": ChannelConfig(file_prefix=".sesslog_"),
         "tasks": ChannelConfig(file_prefix=".tasks_"),
+        "unknowns": ChannelConfig(file_prefix=".unknowns_"),
     }
 
 
@@ -202,6 +239,10 @@ def _default_category_routes() -> dict[str, list[str]]:
     return {
         "_default": ["shell", "sesslog"],
         "task": ["shell", "sesslog", "tasks"],
+        # Uncategorized tools go to sesslog (the "everything" channel) and
+        # to a dedicated unknowns channel for discovery. Deliberately NOT
+        # routed to shell, which is the clean shell-history channel.
+        "unknown": ["sesslog", "unknowns"],
     }
 
 
@@ -306,6 +347,7 @@ class LogEntry:
 TOOL_CATEGORIES: dict[str, str] = {
     # Core execution
     "Bash": "bash",
+    "PowerShell": "bash",
     # File system queries
     "LS": "system",
     "Glob": "system",
@@ -352,9 +394,12 @@ def categorize_tool(tool_name: str) -> str:
     if category:
         return category
 
-    # Unknown tool - log for visibility and return "other"
-    debug_log(f"Unknown tool encountered: {tool_name}, categorizing as 'other'")
-    return "other"
+    # Unknown tool - log for visibility and return "unknown"
+    # The "unknown" category routes to the dedicated `unknowns` channel
+    # (and sesslog) by default, keeping shell-history channel free of
+    # uncategorized tools.
+    debug_log(f"Unknown tool encountered: {tool_name}, categorizing as 'unknown'")
+    return "unknown"
 
 
 # ============================================================================
@@ -1249,7 +1294,7 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
     """Extract command content based on tool type."""
     tool_input = tool_info.input
 
-    if tool_info.name == "Bash":
+    if tool_info.name in ("Bash", "PowerShell"):
         return tool_input.get("command", "")
 
     elif tool_info.name == "Read":
@@ -1397,8 +1442,12 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
         return get_task_content(tool_info.name, tool_info.raw_json, config)
 
     else:
-        # For unknown tools, try common field names
-        for field in ("pattern", "url", "prompt", "query", "content"):
+        # For unknown tools, try common field names. Order matters: more
+        # specific/distinctive fields first so collisions are less likely.
+        # `command` covers shell-like tools (Bash/PowerShell pattern), `skill`
+        # covers Skill-like, `subject` covers task-like, etc. New tools that
+        # match these shapes will "just work" without needing a custom handler.
+        for field in ("command", "pattern", "url", "prompt", "query", "skill", "subject", "content"):
             if field in tool_input:
                 return str(tool_input[field])
         return ""
@@ -1448,6 +1497,11 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
 
     # Get tool name with agent context
     tool_display = format_tool_name(tool_info)
+
+    # Prefix uncategorized tools with `?` for grep-friendly identification
+    # within any channel. Pattern remains parseable: `{?ToolName: ...}`.
+    if categorize_tool(tool_info.name) == "unknown":
+        tool_display = f"?{tool_display}"
 
     # Determine content based on verbosity and action-only
     if should_use_action_only(tool_info.name, config):
@@ -2632,6 +2686,14 @@ def main() -> None:
 
     # Extract command content
     command_content = get_command_content(tool_info, config)
+
+    # If extraction returned nothing despite input being present, the tool
+    # likely has no specific handler AND its fields don't match the generic
+    # fallback list. Warn once per tool_name (across all hook invocations,
+    # via sentinel file) so we can add a proper handler without spamming the
+    # debug log on every call.
+    if not command_content and tool_info.input:
+        _warn_unknown_tool_once(tool_info.name, list(tool_info.input.keys()))
 
     # Generate entry (using captured event_time for consistency)
     entry = generate_entry(tool_info, config, command_content, event_time)

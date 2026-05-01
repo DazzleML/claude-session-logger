@@ -5,6 +5,36 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-01
+
+Tool coverage robustness release: handles the "Anthropic adds a new tool, our log goes empty" class of bug going forward, with channel-aware routing so uncategorized tools no longer pollute purpose-specific channels (`.shell_*.log` stays clean).
+
+### Fixed
+- **PowerShell tool logged with empty content**: Same root cause as Skill (#22) — `get_command_content()` had no specific handler for `PowerShell` and the generic fallback didn't check the `command` field. Affected sesslog entries appeared as `{PowerShell:  }` with no command text. Existing transcript JSONLs are unaffected and contain the original commands; only the distilled sesslog views were degraded.
+- **Empty-content warning throttling was a no-op**: The previous `_empty_content_warned: set[str]` lived in module scope, but each `PostToolUse` event spawns a fresh hook subprocess — the set never persisted, meaning every unknown tool would (re-)log on every call if/when warning was added. Replaced with a sentinel-file approach (`~/.claude/logs/.unknown_tool_warnings/<tool_name>.warned`) that throttles across all hook invocations.
+
+### Added
+- **`PowerShell` handler**: Categorized as `bash` (shares the `command` input field). Routes to the `shell` channel like Bash.
+- **`unknowns` log channel** (`.unknowns_*.log`): Dedicated channel for tools without specific handlers. Enabled by default in fresh installs. Deliberately NOT in the `_default` route — keeps `.shell_*.log` free of non-shell entries.
+- **`unknown` category** (renamed from `"other"`): Returned by `categorize_tool()` for any tool not in `TOOL_CATEGORIES` and not matching the `mcp__` prefix. Default route: `["sesslog", "unknowns"]`.
+- **`?` marker prefix** for unknown-tool entries (`{?ToolName: content }`): Grep-friendly identification within any channel — useful for users who don't tail the dedicated `.unknowns_*.log`.
+- **Throttled discovery warning** in `~/.claude/logs/hook-debug.log`: First time an unknown tool is encountered (across all sessions and processes, throttled via sentinel files), log the tool name and its input field names so a proper handler can be added. Reset by deleting `~/.claude/logs/.unknown_tool_warnings/`.
+
+### Changed
+- **Generic content-extraction fallback** now checks `command, skill, subject` in addition to the original `pattern, url, prompt, query, content`. New tools matching common shell-like, skill-like, or task-like shapes will produce useful log entries without code changes.
+
+### Backwards Compatibility
+- **No regressions for users with customized `category_routes`**: The config loader already merges per-key (defaults factory creates the base dict; user values overlay individual keys). Customized configs that lack `unknowns` channel or `unknown` route automatically pick them up from defaults on next session — no manual migration needed.
+- **Opt-out path** if the dedicated channel is unwanted: set `"routing.channels.unknowns.enabled": false` in `~/.claude/plugins/settings/session-logger.json`, or override the route: `"routing.category_routes.unknown": ["sesslog"]`.
+
+### Known Follow-ups
+- MCP routing review (separate issue): MCP tools currently route to `["shell", "sesslog"]`; some belong in shell, most don't. Needs per-server analysis.
+- `/sessioninfo` enhancement (separate issue): Surface a count and list of unknown tools encountered in the current session.
+- Tool-coverage audit script (separate issue): Periodic scan of recent sesslogs for `{?` markers to surface persistent unknowns.
+
+### Design
+See `2026-05-01__12-03-14__tool-coverage-and-channel-routing-for-unknowns.md` for the architectural analysis.
+
 ## [0.2.0] - 2026-04-20
 
 Dev-tooling release: replaces hand-maintained `scripts-repo/` with a git subtree from
