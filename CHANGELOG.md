@@ -5,6 +5,30 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-05
+
+First sub-issue of the channel-architecture-evolution epic (#27). Adds the `tools` channel — the user's primary "find exact tool calls" investigation view. This channel captures everything the OLD pre-v0.2.1 `.sesslog_*` did (shell + tools + tasks + skills) but NOT the unknowns (which have their own channel since v0.2.1) and NOT the future user/AI conversation prose (coming in v0.3.5).
+
+### Added
+- **`tools` log channel** (`.tools_*.log`): Dedicated channel for AI activity (tool calls, skill invocations, task ops, shell commands) without prose. Enabled by default. Routes from the `_default` and `task` categories. The user's primary investigation channel for "find exact tool calls" workflows.
+- **15 new pytest tests** in `tests/one-offs/test_tools_channel.py` covering channel creation, routing, customized-config merge behavior, and routing resolution.
+- **Human test checklist** at `tests/checklists/v0.3.0__Feature__tools-channel.md`.
+
+### Changed
+- **Default category routes**: `_default` is now `["shell", "sesslog", "tools"]` (was `["shell", "sesslog"]`); `task` is now `["shell", "sesslog", "tools", "tasks"]` (was `["shell", "sesslog", "tasks"]`). The `unknown` category route is unchanged (`["sesslog", "unknowns"]` — deliberately not in the tools channel since unknowns have their own discovery surface).
+- Two pre-existing v0.2.1 tests updated to assert the new defaults.
+
+### Backwards Compatibility
+- **No regressions for users with customized `category_routes`**: The config loader's per-key merge behavior (verified in v0.2.1) means customized configs lacking the `tools` channel or updated routes automatically pick them up from defaults on next session.
+- **Opt-out path**: set `"routing.channels.tools.enabled": false` in `~/.claude/plugins/settings/session-logger.json`, or override the routes to exclude `tools`.
+
+### Closes / Refs
+- Closes #28 (sub-issue 1 of epic #27)
+- Refs #1 (continues user-configurable channels feature; final closure in #36 / v0.3.6)
+
+### Design
+See `2026-05-01__17-36-55__channel-architecture-evolution-epic.md` for the v0.3.x epic source-of-truth design.
+
 ## [0.2.1] - 2026-05-01
 
 Tool coverage robustness release: handles the "Anthropic adds a new tool, our log goes empty" class of bug going forward, with channel-aware routing so uncategorized tools no longer pollute purpose-specific channels (`.shell_*.log` stays clean).

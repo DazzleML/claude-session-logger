@@ -18,12 +18,13 @@
       "shell": {"file_prefix": ".shell_", "enabled": true},
       "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
       "tasks": {"file_prefix": ".tasks_", "enabled": true},
-      "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
+      "unknowns": {"file_prefix": ".unknowns_", "enabled": true},
+      "tools": {"file_prefix": ".tools_", "enabled": true}
     },
     "category_routes": {
-      "_default": ["shell", "sesslog"],
-      "task": ["shell", "sesslog", "tasks"],
-      "mcp": ["shell", "sesslog"],
+      "_default": ["shell", "sesslog", "tools"],
+      "task": ["shell", "sesslog", "tools", "tasks"],
+      "mcp": ["shell", "sesslog", "tools"],
       "unknown": ["sesslog", "unknowns"]
     },
     "tool_overrides": {}

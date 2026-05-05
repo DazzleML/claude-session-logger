@@ -231,17 +231,27 @@ def _default_channels() -> dict[str, ChannelConfig]:
         "sesslog": ChannelConfig(file_prefix=".sesslog_"),
         "tasks": ChannelConfig(file_prefix=".tasks_"),
         "unknowns": ChannelConfig(file_prefix=".unknowns_"),
+        # AI-activity-without-prose investigation view. Captures everything
+        # the OLD pre-v0.2.1 .sesslog_* did (shell + tools + tasks + skills)
+        # but excludes unknowns and (future) user/AI conversation prose.
+        # The user's primary "find exact tool calls" channel.
+        "tools": ChannelConfig(file_prefix=".tools_"),
     }
 
 
 def _default_category_routes() -> dict[str, list[str]]:
     """Create default category to channel routing."""
     return {
-        "_default": ["shell", "sesslog"],
-        "task": ["shell", "sesslog", "tasks"],
+        # Most categories now route to tools as well as shell + sesslog.
+        # `tools` provides the AI-activity investigation view; `sesslog` is
+        # the kitchen-sink "everything" channel; `shell` stays the clean
+        # shell-history channel.
+        "_default": ["shell", "sesslog", "tools"],
+        "task": ["shell", "sesslog", "tools", "tasks"],
         # Uncategorized tools go to sesslog (the "everything" channel) and
         # to a dedicated unknowns channel for discovery. Deliberately NOT
-        # routed to shell, which is the clean shell-history channel.
+        # routed to shell or tools -- shell stays clean, tools stays focused
+        # on known/categorized AI activity.
         "unknown": ["sesslog", "unknowns"],
     }
 

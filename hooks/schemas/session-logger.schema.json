@@ -95,20 +95,21 @@
             "shell": {"file_prefix": ".shell_", "enabled": true},
             "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
             "tasks": {"file_prefix": ".tasks_", "enabled": true},
-            "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
+            "unknowns": {"file_prefix": ".unknowns_", "enabled": true},
+            "tools": {"file_prefix": ".tools_", "enabled": true}
           }
         },
         "category_routes": {
           "type": "object",
-          "description": "Map tool categories to channels. Use '_default' for fallback. Use 'unknown' for uncategorized tools (those without a specific TOOL_CATEGORIES entry).",
+          "description": "Map tool categories to channels. Use '_default' for fallback. Use 'unknown' for uncategorized tools (those without a specific TOOL_CATEGORIES entry). The 'tools' channel captures AI activity (tools, skills, tasks, shell) for investigation views without prose.",
           "additionalProperties": {
             "type": "array",
             "items": {"type": "string"},
             "description": "Array of channel names to write to"
           },
           "default": {
-            "_default": ["shell", "sesslog"],
-            "task": ["shell", "sesslog", "tasks"],
+            "_default": ["shell", "sesslog", "tools"],
+            "task": ["shell", "sesslog", "tools", "tasks"],
             "unknown": ["sesslog", "unknowns"]
           }
         },

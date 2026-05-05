@@ -122,8 +122,9 @@ class TestDefaultChannels:
         assert channels["unknowns"].enabled is True
 
     def test_existing_channels_still_present(self):
+        # Updated for v0.3.0 (#28): adds `tools` channel
         channels = _default_channels()
-        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns"}
+        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools"}
 
 
 class TestDefaultCategoryRoutes:
@@ -140,9 +141,10 @@ class TestDefaultCategoryRoutes:
         assert "shell" not in routes["unknown"]
 
     def test_existing_routes_still_present(self):
+        # Updated for v0.3.0 (#28): _default and task routes now include `tools`
         routes = _default_category_routes()
-        assert routes["_default"] == ["shell", "sesslog"]
-        assert routes["task"] == ["shell", "sesslog", "tasks"]
+        assert routes["_default"] == ["shell", "sesslog", "tools"]
+        assert routes["task"] == ["shell", "sesslog", "tools", "tasks"]
 
 
 class TestMarkerPrefix:
