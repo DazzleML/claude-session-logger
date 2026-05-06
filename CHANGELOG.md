@@ -5,6 +5,52 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-05-05
+
+**Channel architecture evolution epic complete** (#27, sub-issues #29-#36). Bundles seven coordinated changes that complete the channel taxonomy: bash audit, per-channel config layout, subtype routing framework, auto-generated reference docs, conversation channels (user/AI/agent), and example presets. Closes the original #1 user-configurable channels feature.
+
+### Added
+- **`convo` channel** (`.convo_*.log`): Captures user prompts (via `UserPromptSubmit` hook), AI text responses (via `Stop` + transcript read), and agent dialogue (via `SubagentStop` + transcript read). Routed via three new `message_user` / `message_ai` / `message_agent` categories.
+- **`UserPromptSubmit`, `Stop`, `SubagentStop` hook events** registered in `hooks.json`. Conversation event handler in `log-command.py` extracts user prompts directly from event payload, and reads recent assistant messages from the transcript JSONL using a per-session cursor (`~/.claude/session-states/<id>.convo-cursor`).
+- **Subtype routing framework** (#31): Per-category opt-in for splitting log entries into per-subtype channels (e.g., `.bash-powershell_*.log`, `.mcp-github_*.log`, `.convo-help_*.log` for the `help` subagent). Default OFF for all categories. Configure via `routing.subtype_routing.<category>: true | false | [list]`. Built-in extractors for `bash`, `mcp`, `meta`, `skill`.
+- **Per-channel config directory layout** (#30): `~/.claude/plugins/settings/session-logger/` with `_global.json`, `channels/<name>.json`, and `overrides.json`. Loader auto-detects; falls back to single-file `session-logger.json` if directory absent. Both layouts produce identical in-memory `Config` objects.
+- **Auto-generated channel reference docs** (#32): `scripts-repo/local/generate_channel_docs.py` produces `docs/channels.md` from `TOOL_CATEGORIES` + default routes. Includes per-category tool listings and subtype extractor descriptions.
+- **Configuration guide** (#36): `docs/configuration.md` — channel/category/route mental model, common customizations, preset overview.
+- **Four example config presets** (#36, in `examples/`):
+  - `session-logger-minimal.json` — only `.shell_*` (copy-pasteable history)
+  - `session-logger-power-user.json` — all channels + all subtype splits
+  - `session-logger-agent-debug.json` — focused agent-dialogue debugging
+  - `session-logger-conversation-replay.json` — only `.convo_*` for transcript replay
+- **47 new pytest tests** across three new test files:
+  - `tests/one-offs/test_per_channel_config.py` (10) — directory layout + content + robustness
+  - `tests/one-offs/test_subtype_routing.py` (17) — extractors + expansion + path derivation
+  - `tests/one-offs/test_conversation_channels.py` (20) — channel/category defaults + transcript reading + cursor persistence
+- **`tools` channel** (#28, was previously v0.3.0 in this batch): AI-activity-without-prose investigation view. Routes from `_default` and `task` categories. The user's primary "find exact tool calls" channel.
+
+### Changed
+- **`Grep`, `LS`, `Glob` move from `system` to `bash`** (#29): These are conceptually shell-equivalent operations (`grep -r`, `ls`, `find . -name`). Criterion is workflow context — investigators see navigation + search + execution together in `.shell_*.log`. `Read` stays in `system` (structured file read, not a shell op). `TOOL_CATEGORIES` includes a detailed audit comment documenting the rationale.
+- **Default category routes**: `_default` is now `["shell", "sesslog", "tools"]`; `task` is `["shell", "sesslog", "tools", "tasks"]`; `unknown` stays `["sesslog", "unknowns"]` (deliberately not routed to shell or tools); new `message_user` / `message_ai` / `message_agent` route to `["sesslog", "convo"]`.
+- **`log_entry()` signature**: now accepts `raw_json` (used for subtype extraction).
+- **Two pre-existing v0.2.1 tests updated** to assert the expanded default channel set.
+
+### Backwards Compatibility
+- **No regressions for users with customized configs**: ConfigLoader's per-key merge (verified in v0.2.1) means customized configs lacking new channels/routes auto-pick them up from defaults on next session.
+- **Subtype routing is opt-in**: Default OFF for all categories. No new files appear unless the user explicitly enables.
+- **Conversation capture is opt-in disable, not opt-in enable**: enabled by default. Privacy concerns: set `routing.channels.convo.enabled: false` to stop capturing user/AI prose.
+- **Per-channel config layout is opt-in adoption**: Single-file layout still fully supported.
+
+### Notes for Implementation Verification
+- The `Stop` and `SubagentStop` event handlers depend on Claude Code's hook event payloads and transcript JSONL schemas, which aren't formally pinned by Anthropic. Implementation includes graceful fallbacks for multiple shapes (`message.content` and `role/content` patterns). Live verification belongs to the human checklist.
+- `UserPromptSubmit` payload field name varies by SDK; handler tries `user_prompt`, `prompt`, `user_input` in order.
+
+### Closes / Refs
+- **Closes #1** (Feature: User-configurable logging channels and file routing) — final delivery of the original flexibility intent
+- **Closes #27** (epic) and sub-issues #28, #29, #30, #31, #32, #33, #34, #35, #36
+- **Refs #8** (tool coverage audit — partial closure via #29 work)
+
+### Design
+See `2026-05-01__17-36-55__channel-architecture-evolution-epic.md` (epic source-of-truth design with two user addenda).
+
 ## [0.3.0] - 2026-05-05
 
 First sub-issue of the channel-architecture-evolution epic (#27). Adds the `tools` channel — the user's primary "find exact tool calls" investigation view. This channel captures everything the OLD pre-v0.2.1 `.sesslog_*` did (shell + tools + tasks + skills) but NOT the unknowns (which have their own channel since v0.2.1) and NOT the future user/AI conversation prose (coming in v0.3.5).

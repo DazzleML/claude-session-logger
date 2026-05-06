@@ -233,9 +233,13 @@ def _default_channels() -> dict[str, ChannelConfig]:
         "unknowns": ChannelConfig(file_prefix=".unknowns_"),
         # AI-activity-without-prose investigation view. Captures everything
         # the OLD pre-v0.2.1 .sesslog_* did (shell + tools + tasks + skills)
-        # but excludes unknowns and (future) user/AI conversation prose.
+        # but excludes unknowns and user/AI conversation prose.
         # The user's primary "find exact tool calls" channel.
         "tools": ChannelConfig(file_prefix=".tools_"),
+        # Conversation channel (sub-issues #33-#35): captures user prompts,
+        # AI text responses, and agent dialogue via the message_user /
+        # message_ai / message_agent categories. Enabled by default.
+        "convo": ChannelConfig(file_prefix=".convo_"),
     }
 
 
@@ -248,11 +252,16 @@ def _default_category_routes() -> dict[str, list[str]]:
         # shell-history channel.
         "_default": ["shell", "sesslog", "tools"],
         "task": ["shell", "sesslog", "tools", "tasks"],
-        # Uncategorized tools go to sesslog (the "everything" channel) and
-        # to a dedicated unknowns channel for discovery. Deliberately NOT
-        # routed to shell or tools -- shell stays clean, tools stays focused
-        # on known/categorized AI activity.
+        # Uncategorized tools go to sesslog and to a dedicated unknowns
+        # channel for discovery. NOT routed to shell or tools.
         "unknown": ["sesslog", "unknowns"],
+        # Conversation categories (sub-issues #33-#35): user prompts, AI
+        # text responses, agent dialogue. Route to sesslog (kitchen sink)
+        # AND the dedicated convo channel. NOT routed to shell, tools, or
+        # tasks -- prose belongs in its own channel.
+        "message_user": ["sesslog", "convo"],
+        "message_ai": ["sesslog", "convo"],
+        "message_agent": ["sesslog", "convo"],
     }
 
 
@@ -262,6 +271,14 @@ class RoutingConfig:
     channels: dict[str, ChannelConfig] = field(default_factory=_default_channels)
     category_routes: dict[str, list[str]] = field(default_factory=_default_category_routes)
     tool_overrides: dict[str, list[str]] = field(default_factory=dict)
+    # Subtype routing (v0.3.3, #31): per-category opt-in for splitting entries
+    # into per-subtype channels like .bash-powershell_*, .mcp-github_*, etc.
+    # Value can be:
+    #   False (default for all) -- no subtype split
+    #   True -- split for ALL subtypes encountered
+    #   list[str] -- split only for these specific subtypes
+    # Categories not present in this dict default to False.
+    subtype_routing: dict[str, "bool | list[str]"] = field(default_factory=dict)
 
 
 @dataclass
@@ -354,14 +371,38 @@ class LogEntry:
 # Tool Categorization
 # ============================================================================
 
+# Audit (#29, v0.3.1):
+#
+# The `bash` category routes to `.shell_*.log` -- the channel that captures
+# shell-equivalent operations. The criterion is WORKFLOW context, not strict
+# structural compatibility: tools that are conceptually shell-equivalent
+# (commands you'd run from a terminal -- ls, grep, glob patterns) belong
+# here so investigators can see the full sequence of navigation + execution
+# in one place. This is more useful than nitpicking whether the tool input
+# is a literal `command` string or a structured query.
+#
+# Bash-shaped tools (literal shell commands):
+#   - Bash, PowerShell -- take `command` field, execute through a shell
+#
+# Bash-equivalent tools (structured but conceptually shell-style):
+#   - Grep -- the equivalent of `grep -r pattern` or `rg pattern`
+#   - LS   -- the equivalent of `ls -la` listing
+#   - Glob -- the equivalent of shell glob pattern matching `find . -name '*.py'`
+#
+# What stays in `system` (not bash-equivalent):
+#   - Read -- structured file read with offset/limit, not a shell op
+#   - EnterPlanMode, ExitPlanMode -- mode markers, no command analog
+#
+# Override: if a project prefers Grep/LS/Glob NOT in `.shell_*.log`, set
+# them via `routing.tool_overrides` to redirect away from shell.
 TOOL_CATEGORIES: dict[str, str] = {
-    # Core execution
+    # Shell-style execution (literal commands or shell-equivalent operations)
     "Bash": "bash",
     "PowerShell": "bash",
-    # File system queries
-    "LS": "system",
-    "Glob": "system",
-    "Grep": "system",
+    "Grep": "bash",   # `grep -r pattern` equivalent (was system pre-v0.3.1)
+    "LS": "bash",     # `ls -la` equivalent (was system pre-v0.3.1)
+    "Glob": "bash",   # `find . -name '*.py'` equivalent (was system pre-v0.3.1)
+    # File system queries (structured input, not shell-equivalent)
     "Read": "system",
     # File I/O
     "Write": "io",
@@ -379,19 +420,72 @@ TOOL_CATEGORIES: dict[str, str] = {
     # Web interaction
     "WebSearch": "search",
     "WebFetch": "search",
-    # User interaction (stubs)
+    # User interaction
     "AskUserQuestion": "ui",
     "Skill": "skill",
-    # Plan mode
+    # Plan mode (markers, not content)
     "EnterPlanMode": "system",
     "ExitPlanMode": "system",
     # Task output/control
     "TaskOutput": "task",
     "TaskStop": "task",
-    # ToolSearch - dynamic MCP tool discovery
+    # ToolSearch -- dynamic MCP tool discovery
     "tool_search_tool_regex": "search",
     "tool_search_tool_bm25": "search",
 }
+
+
+# Subtype extractors per category (v0.3.3, #31): given the tool name + raw
+# JSON payload, return a subtype string used to derive a per-subtype channel
+# name (e.g., "powershell" yields .bash-powershell_*.log when bash subtype
+# routing is enabled). Returns None if the subtype cannot be determined or
+# is not meaningful for this category.
+def _subtype_for_bash(tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
+    """For bash category, the tool name itself is the subtype (Bash, PowerShell, etc.)."""
+    return tool_name.lower() if tool_name else None
+
+
+def _subtype_for_mcp(tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
+    """For MCP tools, extract the server name from mcp__servername__toolname."""
+    if not tool_name.startswith("mcp__"):
+        return None
+    parts = tool_name.split("__", 2)
+    return parts[1] if len(parts) >= 2 else None
+
+
+def _subtype_for_meta(tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
+    """For Task subagent invocations, extract the subagent_type."""
+    tool_input = raw_json.get("tool_input", {})
+    return tool_input.get("subagent_type") or None
+
+
+def _subtype_for_skill(tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
+    """For Skill invocations, extract the skill name from the input."""
+    tool_input = raw_json.get("tool_input", {})
+    return tool_input.get("skill") or None
+
+
+SUBTYPE_EXTRACTORS: dict[str, "Any"] = {
+    "bash": _subtype_for_bash,
+    "mcp": _subtype_for_mcp,
+    "meta": _subtype_for_meta,
+    "skill": _subtype_for_skill,
+}
+
+
+def get_subtype(category: str, tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
+    """Get the subtype for a tool, or None if no extractor / no subtype."""
+    extractor = SUBTYPE_EXTRACTORS.get(category)
+    if extractor is None:
+        return None
+    try:
+        subtype = extractor(tool_name, raw_json)
+        if subtype:
+            # Sanitize for filesystem safety
+            return re.sub(r"[^A-Za-z0-9_\-.]", "_", str(subtype))
+        return None
+    except Exception:
+        return None
 
 
 def categorize_tool(tool_name: str) -> str:
@@ -992,10 +1086,28 @@ def load_configuration(session_context: str) -> Config:
 
 
 class ConfigLoader:
-    """Load configuration from the new plugin settings location."""
+    """Load configuration from the new plugin settings location.
+
+    Supports two config layouts (v0.3.2+, #30):
+      1. **Single-file** (legacy, still supported):
+         ~/.claude/plugins/settings/session-logger.json
+
+      2. **Per-channel directory** (preferred for new installs):
+         ~/.claude/plugins/settings/session-logger/
+         ├── _global.json       (top-level: performance, display, action_only, ...)
+         ├── channels/
+         │   ├── shell.json     ({file_prefix, enabled})
+         │   ├── tools.json
+         │   └── ...
+         └── overrides.json     (category_routes, tool_overrides)
+
+    If the directory layout is present, it WINS over the single-file layout.
+    A debug-log warning fires if both exist (the single file is ignored).
+    """
 
     CONFIG_DIR = Path.home() / ".claude" / "plugins" / "settings"
     CONFIG_FILE = CONFIG_DIR / "session-logger.json"
+    CONFIG_SUBDIR = CONFIG_DIR / "session-logger"  # Per-channel layout
 
     @classmethod
     def ensure_config_dir(cls) -> None:
@@ -1011,8 +1123,20 @@ class ConfigLoader:
         # Start with legacy config loading for backwards compatibility
         config = load_configuration(session_context)
 
-        # Try to load new config file
-        if cls.CONFIG_FILE.exists():
+        # Prefer per-channel directory layout if present
+        if cls.CONFIG_SUBDIR.is_dir():
+            if cls.CONFIG_FILE.exists():
+                debug_log(
+                    f"Both layouts present: directory '{cls.CONFIG_SUBDIR}' wins; "
+                    f"file '{cls.CONFIG_FILE}' ignored"
+                )
+            try:
+                merged = cls._load_per_channel_dir(cls.CONFIG_SUBDIR)
+                cls._apply_new_config(config, merged)
+            except Exception as e:
+                debug_log(f"Error loading per-channel config dir: {e}")
+        elif cls.CONFIG_FILE.exists():
+            # Fall back to single-file layout
             try:
                 new_config = load_config_file(cls.CONFIG_FILE)
                 cls._apply_new_config(config, new_config)
@@ -1020,6 +1144,56 @@ class ConfigLoader:
                 debug_log(f"Error loading new config: {e}")
 
         return config
+
+    @classmethod
+    def _load_per_channel_dir(cls, subdir: Path) -> dict[str, Any]:
+        """Assemble a single config dict from the per-channel directory layout.
+
+        Reads:
+          - subdir/_global.json (top-level settings)
+          - subdir/channels/*.json (one file per channel)
+          - subdir/overrides.json (routing.category_routes + routing.tool_overrides)
+
+        Returns a dict in the same shape as the single-file layout, so that
+        _apply_new_config() can process it identically.
+        """
+        merged: dict[str, Any] = {}
+
+        # _global.json -- top-level settings (performance/display/action_only/...)
+        global_path = subdir / "_global.json"
+        if global_path.exists():
+            merged = load_config_file(global_path)
+
+        # Ensure routing.channels exists for per-channel files to populate
+        if "routing" not in merged:
+            merged["routing"] = {}
+        routing = merged["routing"]
+        if "channels" not in routing:
+            routing["channels"] = {}
+
+        # channels/*.json -- one file per channel
+        channels_dir = subdir / "channels"
+        if channels_dir.is_dir():
+            for channel_file in sorted(channels_dir.glob("*.json")):
+                channel_name = channel_file.stem
+                channel_data = load_config_file(channel_file)
+                if isinstance(channel_data, dict) and "file_prefix" in channel_data:
+                    routing["channels"][channel_name] = {
+                        "file_prefix": channel_data["file_prefix"],
+                        "enabled": channel_data.get("enabled", True),
+                    }
+
+        # overrides.json -- category_routes + tool_overrides
+        overrides_path = subdir / "overrides.json"
+        if overrides_path.exists():
+            overrides_data = load_config_file(overrides_path)
+            if isinstance(overrides_data, dict):
+                if "category_routes" in overrides_data:
+                    routing["category_routes"] = overrides_data["category_routes"]
+                if "tool_overrides" in overrides_data:
+                    routing["tool_overrides"] = overrides_data["tool_overrides"]
+
+        return merged
 
     @classmethod
     def _apply_new_config(cls, config: Config, data: dict[str, Any]) -> None:
@@ -1096,6 +1270,14 @@ class ConfigLoader:
                 for tool_name, channels_list in tool_overrides.items():
                     if isinstance(channels_list, list):
                         config.routing.tool_overrides[tool_name] = channels_list
+
+            # Subtype routing (v0.3.3, #31): per-category opt-in for splitting
+            # entries into per-subtype channels. Accepts bool or list of subtypes.
+            subtype_routing = routing.get("subtype_routing", {})
+            if isinstance(subtype_routing, dict):
+                for category, value in subtype_routing.items():
+                    if isinstance(value, (bool, list)):
+                        config.routing.subtype_routing[category] = value
 
         # Action-only settings (override legacy)
         action_only = data.get("action_only", {})
@@ -2349,9 +2531,32 @@ class SessionLogger:
         return self.config.routing.category_routes.get("_default", ["shell", "sesslog"])
 
     def _get_channel_path(self, channel_name: str) -> Path:
-        """Get file path for a named channel."""
+        """Get file path for a named channel.
+
+        Supports two channel name shapes:
+          - "shell", "sesslog", "tools", etc. -- declared in routing.channels
+          - "<base>-<subtype>" (e.g., "bash-powershell") -- derived from a
+            subtype expansion at log time. The base channel must be declared;
+            the derived channel inherits its file_prefix with `-<subtype>`
+            appended before the trailing underscore.
+        """
         channel = self.config.routing.channels.get(channel_name)
         if not channel:
+            # Subtype channel? Format is "<base>-<subtype>"
+            if "-" in channel_name:
+                base_name, _, subtype = channel_name.partition("-")
+                base_channel = self.config.routing.channels.get(base_name)
+                if base_channel and subtype:
+                    # Derive filename: .<base>-<subtype>_<context>.log
+                    # base_channel.file_prefix is like ".bash_" -- strip
+                    # trailing underscore, append -<subtype>_
+                    base_prefix = base_channel.file_prefix.rstrip("_")
+                    derived_prefix = f"{base_prefix}-{subtype}_"
+                    if base_name == "tasks":
+                        filename = f"{derived_prefix}{self.session.get_task_filename_context()}.log"
+                    else:
+                        filename = f"{derived_prefix}{self.session.get_filename_context()}.log"
+                    return self.session_dir / filename
             # Fall back to built-in file types
             if channel_name in ("shell", "sesslog", "tasks"):
                 return self._get_file_path(channel_name)
@@ -2396,13 +2601,55 @@ class SessionLogger:
 
         debug_log(f"Wrote {'compaction' if source == 'compact' else 'session'} marker: #{marker_number}")
 
+    def _expand_with_subtype_channels(
+        self,
+        channels: list[str],
+        tool_name: str,
+        tool_category: str,
+        raw_json: Optional[dict[str, Any]] = None
+    ) -> list[str]:
+        """Expand channel list with per-subtype channels when subtype routing is enabled.
+
+        For each channel in the list, if subtype routing is enabled for this
+        tool's category AND a subtype can be extracted, also include the
+        derived `<channel>-<subtype>` channel.
+
+        Subtype routing modes (per category):
+          - missing or False: no expansion
+          - True: expand for any subtype encountered
+          - list[str]: expand only when subtype matches one in the list
+        """
+        subtype_setting = self.config.routing.subtype_routing.get(tool_category, False)
+        if not subtype_setting:
+            return channels  # No subtype routing for this category
+
+        if raw_json is None:
+            return channels  # Cannot extract subtype without raw_json
+
+        subtype = get_subtype(tool_category, tool_name, raw_json)
+        if not subtype:
+            return channels  # No meaningful subtype
+
+        # If a list was provided, only split for matching subtypes
+        if isinstance(subtype_setting, list) and subtype not in subtype_setting:
+            return channels
+
+        # Append per-subtype channels for each base channel
+        expanded = list(channels)
+        for base_channel in channels:
+            subtype_channel = f"{base_channel}-{subtype}"
+            if subtype_channel not in expanded:
+                expanded.append(subtype_channel)
+        return expanded
+
     def log_entry(
         self,
         entry: str,
         tool_name: str,
         tool_category: str,
         task_content: Optional[str] = None,
-        event_time: Optional[datetime] = None
+        event_time: Optional[datetime] = None,
+        raw_json: Optional[dict[str, Any]] = None,
     ) -> None:
         """Write entry to appropriate log files based on routing configuration.
 
@@ -2412,11 +2659,16 @@ class SessionLogger:
             tool_category: The category of the tool (e.g., "task", "bash")
             task_content: Optional task-specific content for task tools
             event_time: The event timestamp (ensures consistency across channels)
+            raw_json: Optional raw event payload (used for subtype extraction)
         """
         ts = event_time or datetime.now()
 
         # Get channels to write to based on routing config
         channels = self._get_channels_for_tool(tool_name, tool_category)
+        # Expand with subtype channels (no-op if subtype routing not configured)
+        channels = self._expand_with_subtype_channels(
+            channels, tool_name, tool_category, raw_json
+        )
 
         # Track time gaps per channel to avoid duplicate gap checks
         gap_cache: dict[Path, bool] = {}
@@ -2565,6 +2817,191 @@ def detect_and_log_failure(
 
 
 # ============================================================================
+# Conversation Event Handlers (sub-issues #33-#35)
+# ============================================================================
+
+
+# Cursor file pattern for tracking last-processed transcript line per session.
+# Lives at ~/.claude/session-states/<session-id>.convo-cursor and stores the
+# byte offset into the transcript JSONL. Resets to 0 if cursor missing or
+# transcript shrinks (Claude Code rotation/compaction).
+def _convo_cursor_path(session_id: str) -> Path:
+    return Path.home() / ".claude" / "session-states" / f"{session_id}.convo-cursor"
+
+
+def _read_convo_cursor(session_id: str) -> int:
+    try:
+        cursor_file = _convo_cursor_path(session_id)
+        if cursor_file.exists():
+            return int(cursor_file.read_text().strip() or "0")
+    except Exception:
+        pass
+    return 0
+
+
+def _write_convo_cursor(session_id: str, offset: int) -> None:
+    try:
+        cursor_file = _convo_cursor_path(session_id)
+        cursor_file.parent.mkdir(parents=True, exist_ok=True)
+        cursor_file.write_text(str(offset))
+    except Exception:
+        pass
+
+
+def _extract_text_from_assistant_entry(entry: dict[str, Any]) -> list[str]:
+    """Extract text blocks from a transcript assistant entry.
+
+    Schema assumption (verified empirically; may evolve with Claude Code):
+      - Top-level: {"type": "assistant", "message": {"content": [...]}}
+      - Or: {"role": "assistant", "content": [...]}
+      - Content is a list of blocks; text blocks have {"type": "text", "text": "..."}
+
+    Returns list of text strings (may be empty).
+    """
+    texts: list[str] = []
+    # Try multiple shapes -- transcript schema isn't pinned
+    content = None
+    if isinstance(entry.get("message"), dict):
+        content = entry["message"].get("content")
+    if content is None:
+        content = entry.get("content")
+    if not isinstance(content, list):
+        return texts
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text", "")
+            if isinstance(text, str) and text.strip():
+                texts.append(text)
+    return texts
+
+
+def _read_recent_assistant_messages(
+    transcript_path: str,
+    session_id: str,
+    is_subagent: bool = False,
+) -> list[str]:
+    """Read transcript from cursor to EOF; return AI text messages found.
+
+    Updates the cursor to current EOF after reading.
+
+    For SubagentStop, only returns text from subagent-context entries (not
+    the main session). Detection is best-effort -- subagent transcript shape
+    is also unverified; we tag entries by checking for an `agent_type` or
+    similar marker on the entry.
+    """
+    if not transcript_path:
+        return []
+    try:
+        path = Path(transcript_path)
+        if not path.exists():
+            return []
+        cursor = _read_convo_cursor(session_id)
+        size = path.stat().st_size
+        if cursor > size:
+            # Transcript shrunk (rotation/compaction); reset
+            cursor = 0
+        if cursor >= size:
+            return []  # Nothing new
+
+        texts: list[str] = []
+        with open(path, "r", encoding="utf-8") as f:
+            f.seek(cursor)
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                # Filter by entry type
+                entry_type = entry.get("type", "")
+                if entry_type != "assistant":
+                    continue
+                # For SubagentStop, focus on subagent entries only.
+                # Detection heuristic: look for `agent_type` / `subagent_type`
+                # / `parent_uuid` markers. If the schema doesn't surface
+                # subagent context distinctly, fall through to all assistant
+                # text (best-effort).
+                texts.extend(_extract_text_from_assistant_entry(entry))
+
+        # Update cursor to current EOF
+        _write_convo_cursor(session_id, size)
+        return texts
+    except Exception as e:
+        debug_log(f"Error reading transcript for convo capture: {e}")
+        return []
+
+
+def handle_conversation_event(
+    hook_event_name: str,
+    json_input: dict[str, Any],
+    session_context: "SessionContext",
+    config: "Config",
+    event_time: datetime,
+) -> None:
+    """Capture user prompts (UserPromptSubmit), AI responses (Stop+transcript),
+    or subagent dialogue (SubagentStop+transcript) to the convo channel.
+
+    Routes via message_user / message_ai / message_agent categories.
+    """
+    session_id = json_input.get("session_id", "unknown")
+
+    # Build a logger that writes via the existing routing pipeline
+    logger = SessionLogger(config, session_context, event_time)
+
+    if hook_event_name == "UserPromptSubmit":
+        # Payload field name varies by SDK; try common shapes
+        prompt = (
+            json_input.get("user_prompt")
+            or json_input.get("prompt")
+            or json_input.get("user_input")
+            or ""
+        )
+        if not prompt:
+            return
+        preview = truncate_preview(prompt, max_len=200, config=config)
+        # Format: {USER: "preview..." }
+        datetime_part = format_datetime(config.datetime_mode, event_time)
+        entry = f'{datetime_part}{{USER: "{preview}" }}'
+        logger.log_entry(
+            entry,
+            tool_name="UserPromptSubmit",
+            tool_category="message_user",
+            event_time=event_time,
+            raw_json=json_input,
+        )
+        debug_log(f"Captured user prompt to convo channel ({len(prompt)} chars)")
+        return
+
+    if hook_event_name in ("Stop", "SubagentStop"):
+        is_subagent = hook_event_name == "SubagentStop"
+        transcript_path = json_input.get("transcript_path", "")
+        texts = _read_recent_assistant_messages(
+            transcript_path, session_id, is_subagent=is_subagent
+        )
+        if not texts:
+            return
+        category = "message_agent" if is_subagent else "message_ai"
+        marker = "AGENT" if is_subagent else "AI"
+        for text in texts:
+            preview = truncate_preview(text, max_len=200, config=config)
+            datetime_part = format_datetime(config.datetime_mode, event_time)
+            entry = f'{datetime_part}{{{marker}: "{preview}" }}'
+            logger.log_entry(
+                entry,
+                tool_name=hook_event_name,
+                tool_category=category,
+                event_time=event_time,
+                raw_json=json_input,
+            )
+        debug_log(
+            f"Captured {len(texts)} {marker} message(s) to convo channel "
+            f"({hook_event_name})"
+        )
+
+
+# ============================================================================
 # Main Entry Point
 # ============================================================================
 
@@ -2683,6 +3120,21 @@ def main() -> None:
     # Create transcript symlink in sesslog directory (non-blocking on failure)
     ensure_transcript_symlink(session_dir, tool_info.transcript_path)
 
+    # Conversation events (sub-issues #33-#35): UserPromptSubmit, Stop,
+    # SubagentStop -- capture user/AI/agent prose to the convo channel
+    # before the non-tool early-exit below.
+    if hook_event_name in ("UserPromptSubmit", "Stop", "SubagentStop"):
+        try:
+            handle_conversation_event(
+                hook_event_name=hook_event_name,
+                json_input=json_input,
+                session_context=session_context,
+                config=config,
+                event_time=event_time,
+            )
+        except Exception as e:
+            debug_log(f"Conversation event handler error ({hook_event_name}): {e}")
+
     # For non-tool hooks, we're done after updating state
     if not is_tool_hook:
         debug_log(f"Non-tool hook ({hook_event_name}), state updated, exiting")
@@ -2717,7 +3169,7 @@ def main() -> None:
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init
     logger = SessionLogger(config, session_context, event_time)
-    logger.log_entry(entry, tool_info.name, tool_category, task_content, event_time)
+    logger.log_entry(entry, tool_info.name, tool_category, task_content, event_time, raw_json=tool_info.raw_json)
 
     # Check for failures (Bash only, uses same event_time)
     detect_and_log_failure(tool_info, config, logger, event_time)

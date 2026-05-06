@@ -32,9 +32,9 @@ class TestToolsChannelDefaults:
         assert channels["tools"].enabled is True
 
     def test_all_default_channels_present(self):
-        # Ensure no regression: existing channels still here, plus tools
+        # Updated for v0.3.5+ (#33-#35): adds `convo` channel
         channels = _default_channels()
-        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools"}
+        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools", "convo"}
 
     def test_tools_channel_uses_consistent_prefix_pattern(self):
         # All channels follow the .{name}_ pattern

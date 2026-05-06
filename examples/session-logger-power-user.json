@@ -1,0 +1,30 @@
+{
+  "$schema": "../hooks/schemas/session-logger.schema.json",
+  "_comment": "POWER USER preset: all channels enabled, including subtype splits for shell, MCP, and agents. Maximum visibility.",
+
+  "performance": {
+    "skill_args_length": 200,
+    "task_description_length": 200
+  },
+  "display": {
+    "verbosity": 3,
+    "datetime": "full",
+    "pwd": true
+  },
+  "routing": {
+    "channels": {
+      "shell":    {"file_prefix": ".shell_",    "enabled": true},
+      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": true},
+      "tasks":    {"file_prefix": ".tasks_",    "enabled": true},
+      "tools":    {"file_prefix": ".tools_",    "enabled": true},
+      "convo":    {"file_prefix": ".convo_",    "enabled": true},
+      "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
+    },
+    "subtype_routing": {
+      "bash": true,
+      "mcp": true,
+      "meta": true,
+      "skill": true
+    }
+  }
+}

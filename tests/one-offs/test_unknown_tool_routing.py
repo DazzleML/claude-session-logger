@@ -123,8 +123,9 @@ class TestDefaultChannels:
 
     def test_existing_channels_still_present(self):
         # Updated for v0.3.0 (#28): adds `tools` channel
+        # Updated for v0.3.5+ (#33-#35): adds `convo` channel
         channels = _default_channels()
-        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools"}
+        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools", "convo"}
 
 
 class TestDefaultCategoryRoutes:

@@ -1,0 +1,18 @@
+{
+  "$schema": "../hooks/schemas/session-logger.schema.json",
+  "_comment": "AGENT DEBUG preset: focused on subagent behavior. Splits agent dialogue per-agent (.convo-help_*, .convo-senior-engineer_*, etc.) for focused debugging across sessions.",
+
+  "routing": {
+    "channels": {
+      "shell":    {"file_prefix": ".shell_",    "enabled": true},
+      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": true},
+      "tasks":    {"file_prefix": ".tasks_",    "enabled": false},
+      "tools":    {"file_prefix": ".tools_",    "enabled": true},
+      "convo":    {"file_prefix": ".convo_",    "enabled": true},
+      "unknowns": {"file_prefix": ".unknowns_", "enabled": false}
+    },
+    "subtype_routing": {
+      "meta": true
+    }
+  }
+}

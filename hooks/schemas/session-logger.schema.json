@@ -113,6 +113,17 @@
             "unknown": ["sesslog", "unknowns"]
           }
         },
+        "subtype_routing": {
+          "type": "object",
+          "description": "Per-category opt-in for splitting entries into per-subtype channels (e.g., .bash-powershell_*, .mcp-github_*). Default OFF for all categories.",
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "boolean", "description": "true = split for all subtypes; false = no split"},
+              {"type": "array", "items": {"type": "string"}, "description": "Split only for these specific subtypes"}
+            ]
+          },
+          "default": {}
+        },
         "tool_overrides": {
           "type": "object",
           "description": "Override routing for specific tools (by exact tool name)",

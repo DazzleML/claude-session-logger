@@ -1,0 +1,15 @@
+{
+  "$schema": "../hooks/schemas/session-logger.schema.json",
+  "_comment": "CONVERSATION REPLAY preset: only the convo channel split per direction (user/AI/agent). For transcript reconstruction or chat-style review.",
+
+  "routing": {
+    "channels": {
+      "shell":    {"file_prefix": ".shell_",    "enabled": false},
+      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": false},
+      "tasks":    {"file_prefix": ".tasks_",    "enabled": false},
+      "tools":    {"file_prefix": ".tools_",    "enabled": false},
+      "convo":    {"file_prefix": ".convo_",    "enabled": true},
+      "unknowns": {"file_prefix": ".unknowns_", "enabled": false}
+    }
+  }
+}
