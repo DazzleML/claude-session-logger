@@ -25,6 +25,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# Phase 0a bootstrap: make hooks/scripts/ importable so `from cclogger.X import Y`
+# resolves once Phase 0b moves code into the cclogger/ package. Safe no-op while
+# the package is still empty.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
 def _ensure_dazzle_filekit():
     """Auto-install dazzle-filekit if missing (e.g. running inside a venv)."""
     try:

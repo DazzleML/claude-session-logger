@@ -5,6 +5,19 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — v0.3.7 work in progress
+
+### Added (Phase 0a — snapshot baseline + cclogger/ skeleton)
+- **`tests/snapshots/` differential test infrastructure** (#37): `synthetic_events.py` defines a 25-event fixture covering all hook event types (SessionStart, PostToolUse, UserPromptSubmit, Stop, SubagentStop, plus context compaction) and major tool categories (bash, system, io, task, todo, meta, search, ui, skill, mcp, unknown). `diff_check.py` runs the synthetic session via subprocess with redirected `HOME`/`USERPROFILE`/`USERNAME`, normalizes timestamps, and compares output to a locally-captured baseline byte-for-byte. Used to verify behavioral equivalence across each v0.3.7 phase. Baselines are gitignored — captured per-developer via `--capture-baseline` because `Path.resolve()` normalizes paths per-OS.
+- **`hooks/scripts/cclogger/` empty package skeleton** (#37): placeholder for Phase 0b's subtractive modularization. Contains only `__init__.py` with a docstring noting Phase 0a status.
+
+### Changed (Phase 0a)
+- **`hooks/scripts/log-command.py`**: 5-line bootstrap added at the top (`sys.path.insert(0, ...)`) so `from cclogger.X import Y` will resolve once Phase 0b moves code into the package. Safe no-op while the package is empty. No behavioral change — `diff_check.py` reports byte-identical output, all 101 tests pass.
+
+### Notes
+- This work prepares for Phase 0b (the actual subtractive modularization) by establishing a regression-detection harness. Phase 0b copies `log-command.py` byte-for-byte to each `cclogger/<module>.py` location and trims each to its concern; the snapshot test gates that move.
+- See `private/claude/2026-05-06__20-59-57__claude-plan__v037-modularization-and-channel-options-framework.md` for the full v0.3.7 implementation plan.
+
 ## [0.3.6] - 2026-05-05
 
 **Channel architecture evolution epic complete** (#27, sub-issues #29-#36). Bundles seven coordinated changes that complete the channel taxonomy: bash audit, per-channel config layout, subtype routing framework, auto-generated reference docs, conversation channels (user/AI/agent), and example presets. Closes the original #1 user-configurable channels feature.
