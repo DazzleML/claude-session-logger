@@ -111,6 +111,28 @@ The hook creates these directories automatically:
 - `~/.claude/session-states/` - Session state persistence
 - `~/.claude/logs/` - Debug logs (when enabled)
 
+If you want to change what gets logged (channels, routing, per-tool overrides):
+
+- Start here: **[docs/configuration.md](docs/configuration.md)**
+- Full channel/category/tool reference: **[docs/channels.md](docs/channels.md)**
+
+### Common Configurations
+
+- Minimal shell history (copy-pasteable `.shell_*.log`, nothing else)
+  - Use preset: `examples/session-logger-minimal.json`
+- Conversation replay (only `.convo_*.log` — useful for reconstructing prompts/responses)
+  - Use preset: `examples/session-logger-conversation-replay.json`
+- Agent debugging (split by agent/subagent, easier to see who's doing what)
+  - Use preset: `examples/session-logger-agent-debug.json`
+- Power user (everything on + subtype splits)
+  - Use preset: `examples/session-logger-power-user.json`
+
+Copy a preset into place:
+
+```bash
+cp examples/session-logger-minimal.json ~/.claude/plugins/settings/session-logger.json
+```
+
 ### Debug Logging
 
 To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Check this file if hooks aren't working as expected.

@@ -1,6 +1,6 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "MINIMAL preset: only the curated shell history channel. For users who want a copy-pasteable shell log and nothing else.",
+  "_comment": "MINIMAL preset: only the curated shell history channel. This covers both the 'minimal' and 'shell-history-only' use cases.",
 
   "routing": {
     "channels": {

@@ -135,10 +135,12 @@ Drop-in starting points:
 | Preset file | Use case |
 |---|---|
 | `session-logger.json` | Default — all channels enabled, no subtype splits |
-| `session-logger-minimal.json` | Only `.shell_*.log` (copy-pasteable shell history) |
+| `session-logger-minimal.json` | Only `.shell_*.log` (copy-pasteable shell history). Also works as “shell-history-only”. |
 | `session-logger-power-user.json` | Everything enabled including all subtype splits |
 | `session-logger-agent-debug.json` | Focus on agent dialogue with per-agent split |
 | `session-logger-conversation-replay.json` | Only conversation prose (user/AI/agent) |
+
+Note: there are **four** “alternate” presets (`minimal`, `power-user`, `agent-debug`, `conversation-replay`) plus the default `session-logger.json`.
 
 Copy any preset to `~/.claude/plugins/settings/session-logger.json` and adjust.
 
