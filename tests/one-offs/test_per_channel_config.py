@@ -9,11 +9,10 @@ Run: python -m pytest tests/one-offs/test_per_channel_config.py -v
 
 import importlib
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "hooks" / "scripts"))
-_mod = importlib.import_module("log-command")
+# sys.path setup happens in conftest.py
+_mod = importlib.import_module("cclogger")
 
 ConfigLoader = _mod.ConfigLoader
 

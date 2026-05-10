@@ -8,13 +8,11 @@ Run: python -m pytest tests/one-offs/test_rename_corruption.py -v
 
 import importlib
 import re
-import sys
 import tempfile
 from pathlib import Path
 
-# log-command.py has a hyphen so we need importlib
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "hooks" / "scripts"))
-_mod = importlib.import_module("log-command")
+# sys.path setup happens in conftest.py
+_mod = importlib.import_module("cclogger")
 
 _rename_files_for_session_change = _mod._rename_files_for_session_change
 sanitize_dirname = _mod.sanitize_dirname

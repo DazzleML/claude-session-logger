@@ -9,11 +9,10 @@ Run: python -m pytest tests/one-offs/test_subtype_routing.py -v
 """
 
 import importlib
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "hooks" / "scripts"))
-_mod = importlib.import_module("log-command")
+# sys.path setup happens in conftest.py
+_mod = importlib.import_module("cclogger")
 
 get_subtype = _mod.get_subtype
 SUBTYPE_EXTRACTORS = _mod.SUBTYPE_EXTRACTORS

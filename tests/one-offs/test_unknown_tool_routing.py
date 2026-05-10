@@ -13,14 +13,12 @@ Run: python -m pytest tests/one-offs/test_unknown_tool_routing.py -v
 
 import importlib
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-# log-command.py has a hyphen so we need importlib
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "hooks" / "scripts"))
-_mod = importlib.import_module("log-command")
+# sys.path setup happens in conftest.py
+_mod = importlib.import_module("cclogger")
 
 categorize_tool = _mod.categorize_tool
 get_command_content = _mod.get_command_content
@@ -185,15 +183,15 @@ class TestSentinelThrottling:
 
     def test_sentinel_file_created_on_first_warn(self, tmp_path, monkeypatch):
         # Redirect sentinel dir to tmp
-        monkeypatch.setattr(_mod, "UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
         _warn_unknown_tool_once("FirstTool", ["foo", "bar"])
         assert (tmp_path / "warnings" / "FirstTool.warned").exists()
 
     def test_second_call_does_not_re_log(self, tmp_path, monkeypatch):
         # Spy on debug_log to count invocations
         call_count = []
-        monkeypatch.setattr(_mod, "UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
-        monkeypatch.setattr(_mod, "debug_log", lambda msg: call_count.append(msg))
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
+        monkeypatch.setattr("cclogger.debug.debug_log", lambda msg: call_count.append(msg))
 
         _warn_unknown_tool_once("SameTool", ["x"])
         _warn_unknown_tool_once("SameTool", ["x"])
@@ -203,8 +201,8 @@ class TestSentinelThrottling:
 
     def test_different_tools_each_get_own_warning(self, tmp_path, monkeypatch):
         call_count = []
-        monkeypatch.setattr(_mod, "UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
-        monkeypatch.setattr(_mod, "debug_log", lambda msg: call_count.append(msg))
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
+        monkeypatch.setattr("cclogger.debug.debug_log", lambda msg: call_count.append(msg))
 
         _warn_unknown_tool_once("ToolA", ["a"])
         _warn_unknown_tool_once("ToolB", ["b"])
@@ -215,7 +213,7 @@ class TestSentinelThrottling:
 
     def test_sanitizes_unsafe_filename_chars(self, tmp_path, monkeypatch):
         # Tool names with slashes/colons shouldn't break sentinel creation
-        monkeypatch.setattr(_mod, "UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_TOOL_WARN_DIR", tmp_path / "warnings")
         _warn_unknown_tool_once("path/like:name", ["x"])
         # Sanitized: non-[A-Za-z0-9_\-.] becomes `_`
         sentinels = list((tmp_path / "warnings").glob("*.warned"))
@@ -226,6 +224,6 @@ class TestSentinelThrottling:
 
     def test_silent_on_filesystem_error(self, tmp_path, monkeypatch):
         # Should not raise even if sentinel dir is unwritable
-        monkeypatch.setattr(_mod, "UNKNOWN_TOOL_WARN_DIR", Path("/nonexistent/no-permission/dir"))
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_TOOL_WARN_DIR", Path("/nonexistent/no-permission/dir"))
         # No assertion needed — just verify no exception
         _warn_unknown_tool_once("AnyTool", ["any"])

@@ -12,12 +12,11 @@ Run: python -m pytest tests/one-offs/test_conversation_channels.py -v
 
 import importlib
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "hooks" / "scripts"))
-_mod = importlib.import_module("log-command")
+# sys.path setup happens in conftest.py
+_mod = importlib.import_module("cclogger")
 
 _default_channels = _mod._default_channels
 _default_category_routes = _mod._default_category_routes
@@ -131,11 +130,15 @@ class TestReadRecentAssistantMessages:
         )
 
     def _isolate_cursor_state(self, tmp_path, monkeypatch):
-        """Redirect cursor file location to tmp so test runs don't leak state."""
+        """Redirect cursor file location to tmp so test runs don't leak state.
+
+        Patches the home module (cclogger.conversation) so the lookup
+        inside _read_convo_cursor / _write_convo_cursor is intercepted.
+        """
         cursor_dir = tmp_path / "session-states"
         cursor_dir.mkdir()
         monkeypatch.setattr(
-            _mod, "_convo_cursor_path",
+            "cclogger.conversation._convo_cursor_path",
             lambda sid: cursor_dir / f"{sid}.convo-cursor"
         )
 
@@ -215,7 +218,7 @@ class TestCursorPersistence:
         cursor_dir = tmp_path / "states"
         cursor_dir.mkdir()
         monkeypatch.setattr(
-            _mod, "_convo_cursor_path",
+            "cclogger.conversation._convo_cursor_path",
             lambda sid: cursor_dir / f"{sid}.convo-cursor"
         )
         offset = _read_convo_cursor("any-id")
@@ -225,7 +228,7 @@ class TestCursorPersistence:
         cursor_dir = tmp_path / "states"
         cursor_dir.mkdir()
         monkeypatch.setattr(
-            _mod, "_convo_cursor_path",
+            "cclogger.conversation._convo_cursor_path",
             lambda sid: cursor_dir / f"{sid}.convo-cursor"
         )
         _write_convo_cursor("roundtrip", 12345)
