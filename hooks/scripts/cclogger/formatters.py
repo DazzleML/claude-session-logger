@@ -18,7 +18,188 @@ from typing import Any, Optional
 
 from cclogger.categorize import categorize_tool
 from cclogger.config import parse_bool
-from cclogger.models import Config, ToolInfo
+from cclogger.models import (
+    RESERVED_VERBOSITY_KEYS,
+    ChannelOptions,
+    Config,
+    NewlinePolicy,
+    ToolInfo,
+)
+
+
+# ============================================================================
+# Channel-options hierarchical resolution (v0.3.7 Phase 1)
+# ============================================================================
+#
+# 5-level precedence walk used by both _resolve_verbosity and
+# _resolve_newline_policy. Most-specific match wins:
+#
+#   Level 1: Per-tool override                — channel_opts.<field>[tool_name]
+#   Level 2: Per-sub-role match (longest prefix wins) — channel_opts.<field>[role_chain[i]]
+#   Level 3: Per-role match (covered by level 2's chain walk)
+#   Level 4: Channel default (string preset OR hint dict at the field root)
+#   Level 5: Global default (PerformanceConfig.content_preview_length for verbosity;
+#            NewlinePolicy.ESCAPE for newline_policy)
+#
+# Inertness during Phase 1: these helpers are defined but not yet wired
+# into the per-tool handlers or SessionLogger. Phase 2+3 connects them.
+
+# Verbosity preset names → max char count (0 = no truncation, "full" content).
+# "preview" maps to None to indicate "use the global default" (level 5 fallback).
+_VERBOSITY_PRESETS: dict[str, Optional[int]] = {
+    "full": 0,
+    "preview": None,    # None = fall through to global_default at level 5
+    "name-only": -1,    # -1 = display name/role only, no content (formatter-side meaning)
+}
+
+
+def _role_prefix_chain(role: str) -> list[str]:
+    """Walk a `:`-separated role from most-specific to least-specific.
+
+    Examples:
+      "agent"                       → ["agent"]
+      "agent:user"                  → ["agent:user", "agent"]
+      "agent:senior-engineer:user"  → ["agent:senior-engineer:user",
+                                       "agent:senior-engineer", "agent"]
+      "bash:powershell"             → ["bash:powershell", "bash"]
+      ""                            → [""]
+
+    Used by _resolve_verbosity / _resolve_newline_policy to find the most
+    specific matching key in a per-role config dict. The crucial property:
+    matching is per-`:`-segment, not arbitrary string prefix. So
+    "agent:user" is NOT a prefix of "agent:senior-engineer:user".
+    """
+    if not role:
+        return [""]
+    parts = role.split(":")
+    return [":".join(parts[: len(parts) - i]) for i in range(len(parts))]
+
+
+def _is_hint_dict(value: dict) -> bool:
+    """True if `value` is a verbosity-hint dict (only reserved keys), not a per-role map.
+
+    A dict containing ONLY reserved keys (max_chars, max_lines, ...) is a
+    hint dict — describes a single verbosity value. A dict containing any
+    non-reserved key is treated as a per-role map.
+    """
+    if not value:
+        return False  # empty dict — treat as no override
+    return all(k in RESERVED_VERBOSITY_KEYS for k in value.keys())
+
+
+def _verbosity_value_to_int(value: Any, global_default: int) -> int:
+    """Coerce a single verbosity value to an int (max_chars).
+
+    Accepts: preset string ("full", "preview", "name-only"), hint dict
+    ({"max_chars": N}), or int. Falls back to `global_default` on unknowns.
+    """
+    if isinstance(value, str):
+        preset = _VERBOSITY_PRESETS.get(value)
+        if preset is None:
+            return global_default  # "preview" or unknown preset → global default
+        return preset  # "full" → 0; "name-only" → -1
+    if isinstance(value, dict):
+        if "max_chars" in value:
+            return int(value["max_chars"])
+        if "max_lines" in value:
+            # Phase 1 stores max_lines as a separate hint; for now coerce to chars
+            # via a sentinel value (negative thousands) so consumers can detect
+            # and apply line-count truncation downstream. Phase 2+3 may switch
+            # to a (mode, value) tuple for richer dispatch.
+            return -1000 - int(value["max_lines"])  # negative sentinel; Phase 2+3 may refine
+        return global_default
+    if isinstance(value, int):
+        return value
+    return global_default
+
+
+def _resolve_verbosity(
+    channel_opts: ChannelOptions,
+    role: str,
+    tool_name: Optional[str],
+    global_default: int,
+) -> int:
+    """Resolve the effective verbosity (max char count) for a channel + role.
+
+    Returns 0 for "no truncation", a positive int for "truncate to N chars",
+    or -1 for "display name only" (formatter-side meaning).
+
+    See module docstring for the 5-level walk.
+    """
+    verbosity = channel_opts.verbosity
+
+    # Level 5: no channel override at all → global default
+    if verbosity is None:
+        return global_default
+
+    # Level 4: channel default is a string preset or hint dict (single value)
+    if isinstance(verbosity, str):
+        return _verbosity_value_to_int(verbosity, global_default)
+    if isinstance(verbosity, dict) and _is_hint_dict(verbosity):
+        return _verbosity_value_to_int(verbosity, global_default)
+
+    # Level 1-3: per-tool override + per-role hierarchy walk
+    if isinstance(verbosity, dict):
+        # Level 1: per-tool override (exact tool name match)
+        if tool_name and tool_name in verbosity:
+            return _verbosity_value_to_int(verbosity[tool_name], global_default)
+        # Level 2-3: per-role longest-prefix match
+        for prefix in _role_prefix_chain(role):
+            if prefix in verbosity:
+                return _verbosity_value_to_int(verbosity[prefix], global_default)
+        # No match in dict → global default
+        return global_default
+
+    # Unknown shape → global default
+    return global_default
+
+
+def _coerce_newline_policy(value: Any) -> NewlinePolicy:
+    """Coerce a value to NewlinePolicy. Accepts enum, string, or unknowns (default ESCAPE)."""
+    if isinstance(value, NewlinePolicy):
+        return value
+    if isinstance(value, str):
+        try:
+            return NewlinePolicy(value)
+        except ValueError:
+            return NewlinePolicy.ESCAPE
+    return NewlinePolicy.ESCAPE
+
+
+def _resolve_newline_policy(
+    channel_opts: ChannelOptions,
+    role: str,
+    tool_name: Optional[str],
+) -> NewlinePolicy:
+    """Resolve the effective NewlinePolicy for a channel + role.
+
+    Same 5-level walk as _resolve_verbosity. Defaults to NewlinePolicy.ESCAPE
+    if no channel override is set (preserves current behavior).
+    """
+    policy = channel_opts.newline_policy
+
+    # Level 5: no channel override → ESCAPE default
+    if policy is None:
+        return NewlinePolicy.ESCAPE
+
+    # Level 4: channel default is enum or string
+    if isinstance(policy, (NewlinePolicy, str)):
+        return _coerce_newline_policy(policy)
+
+    # Level 1-3: per-tool override + per-role hierarchy walk
+    if isinstance(policy, dict):
+        # Level 1: per-tool override
+        if tool_name and tool_name in policy:
+            return _coerce_newline_policy(policy[tool_name])
+        # Level 2-3: per-role longest-prefix match
+        for prefix in _role_prefix_chain(role):
+            if prefix in policy:
+                return _coerce_newline_policy(policy[prefix])
+        # No match → ESCAPE default
+        return NewlinePolicy.ESCAPE
+
+    # Unknown shape → ESCAPE default
+    return NewlinePolicy.ESCAPE
 
 
 # ============================================================================

@@ -87,6 +87,41 @@
                 "type": "boolean",
                 "default": true,
                 "description": "Whether this channel is active"
+              },
+              "options": {
+                "type": "object",
+                "description": "v0.3.7+ per-channel formatting/behavior options. All fields optional; defaults preserve current behavior.",
+                "properties": {
+                  "verbosity": {
+                    "description": "Effective max chars per entry. String preset ('full', 'preview', 'name-only'); hint dict with reserved keys ({'max_chars': N}, {'max_lines': N}); per-role map ({'agent:user': 'preview', 'PowerShell': {'max_chars': 50}}). Reserved keys cannot be role names.",
+                    "oneOf": [
+                      {"type": "string", "enum": ["full", "preview", "name-only"]},
+                      {"type": "object"}
+                    ]
+                  },
+                  "formatter": {
+                    "type": "string",
+                    "description": "Named formatter from registry. v0.3.7 ships: 'default' (hybrid-json {ROLE: ...}), 'chat' (chat-log style; convo channel default), 'task-only' (tasks channel default), 'jsonl' (stub for v0.4.x). Phase 2+3 wires dispatch.",
+                    "default": "default"
+                  },
+                  "newline_policy": {
+                    "description": "Sub-option of 'default' formatter only. 'escape' = literal \\n in output (current; grep-friendly); 'render' = actual newlines (multi-line). Other formatters have intrinsic newline behavior. Per-role map shape also accepted.",
+                    "oneOf": [
+                      {"type": "string", "enum": ["escape", "render"]},
+                      {"type": "object"}
+                    ]
+                  },
+                  "role_labels": {
+                    "type": "object",
+                    "description": "Per-channel override of global ROLE_LABELS dict. Maps role identifier (e.g., 'edit') to display label (e.g., 'EDT'). Use to condense labels in dense channels or rename for custom workflows.",
+                    "additionalProperties": {"type": "string"}
+                  },
+                  "suppress_markers": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Opt out of session-marker broadcast (used by v0.3.7 #39 marker-broadcast work)."
+                  }
+                }
               }
             },
             "required": ["file_prefix"]

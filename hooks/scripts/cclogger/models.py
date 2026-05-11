@@ -1,18 +1,132 @@
 """Data classes used across cclogger.
 
 ToolInfo describes the JSON input from Claude Code; PerformanceConfig,
-ChannelConfig, RoutingConfig, and Config carry user-configurable settings;
-SessionContext supplies filename pieces; LogEntry is the (currently dead,
-to be repurposed in v0.3.7) wrapper for a formatted entry.
+ChannelConfig (with its v0.3.7 ChannelOptions), RoutingConfig, and Config
+carry user-configurable settings; SessionContext supplies filename pieces;
+LogEntry (repurposed in v0.3.7) carries structured content from handlers
+to formatters. NewlinePolicy + ChannelOptions enable per-channel formatting
+without touching handler code.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from enum import Enum
+from typing import Any, Optional, Union
 
 from cclogger.debug import debug_log
+
+
+# ============================================================================
+# Channel-options framework constants (v0.3.7)
+# ============================================================================
+
+# Reserved keyword discriminator for verbosity dict shape:
+#   {"max_chars": 100}                          → hint dict (one of the keys is reserved)
+#   {"agent:user": "preview", "ai": "full"}     → per-role map (no reserved keys)
+# A user attempting to use a reserved keyword as a role name is rejected by
+# config validation (see cclogger/config.py).
+RESERVED_VERBOSITY_KEYS: set[str] = {"max_chars", "max_lines"}
+
+# Closed enum of role identifiers handlers can emit. Roles are hierarchical
+# with `:` separator (e.g., "agent:senior-engineer:user", "bash:powershell").
+# Unknown roles get the `??:<role>` prefix in default formatter output and
+# trigger a sentinel-throttled warning to ~/.claude/logs/.unknown_role_warnings/.
+# Extend this set when adding new tool handlers or agent types.
+ROLES: set[str] = {
+    # Conversation roles (top-level — sub-roles via :)
+    "user", "ai", "agent",
+    # Tool roles — bash category
+    "bash",
+    # Tool roles — system category
+    "read", "enter-plan-mode", "exit-plan-mode",
+    # Tool roles — io category
+    "write", "edit", "multi-edit", "notebook-edit",
+    # Tool roles — task category
+    "task-create", "task-update", "task-list", "task-get",
+    "task-output", "task-stop", "todo-write",
+    # Tool roles — meta category (Task subagent invocation)
+    "task",
+    # Tool roles — search category
+    "web-search", "web-fetch", "glob", "grep",
+    "tool-search-tool-regex", "tool-search-tool-bm25",
+    # Tool roles — ui / skill / mcp categories
+    "ask-user-question", "skill", "mcp",
+}
+
+# Display label for each role (default formatter uses these to produce
+# {LABEL: ...} headers). Per-channel overrides via ChannelOptions.role_labels.
+ROLE_LABELS: dict[str, str] = {
+    # Conversation: ALL CAPS per current convo channel convention
+    "user": "USER",
+    "ai": "AI",
+    "agent": "AGENT",
+    # Tools: Title-Case (matches current `{Edit: ...}` shape)
+    "bash": "Bash",
+    "read": "Read",
+    "enter-plan-mode": "EnterPlanMode",
+    "exit-plan-mode": "ExitPlanMode",
+    "write": "Write",
+    "edit": "Edit",
+    "multi-edit": "MultiEdit",
+    "notebook-edit": "NotebookEdit",
+    "task-create": "TaskCreate",
+    "task-update": "TaskUpdate",
+    "task-list": "TaskList",
+    "task-get": "TaskGet",
+    "task-output": "TaskOutput",
+    "task-stop": "TaskStop",
+    "todo-write": "TodoWrite",
+    "task": "Task",
+    "web-search": "WebSearch",
+    "web-fetch": "WebFetch",
+    "glob": "Glob",
+    "grep": "Grep",
+    "tool-search-tool-regex": "ToolSearchRegex",
+    "tool-search-tool-bm25": "ToolSearchBM25",
+    "ask-user-question": "AskUserQuestion",
+    "skill": "Skill",
+    "mcp": "MCP",
+}
+
+
+class NewlinePolicy(Enum):
+    """How a formatter handles newlines in entry content.
+
+    Sub-option of formatters that support it (currently `default`); other
+    formatters (`chat`, `xml`, `jsonl`) have intrinsic newline behavior
+    dictated by the format itself and ignore this setting.
+    """
+    ESCAPE = "escape"   # \n → literal "\n" in output (escape codes visible; grep-friendly single line)
+    RENDER = "render"   # \n → actual newline in output (multi-line, readable)
+
+
+@dataclass
+class ChannelOptions:
+    """Per-channel formatting + behavior knobs (v0.3.7).
+
+    All fields are optional. None defaults mean "fall through to global
+    default" (verbosity → PerformanceConfig.content_preview_length;
+    newline_policy → ESCAPE). The `formatter` field defaults to "default"
+    (the current `{ROLE: content}` hybrid-json shape) so unconfigured
+    channels keep current behavior.
+
+    Verbosity field shapes:
+      - "full" / "preview" / "name-only"          (preset string)
+      - {"max_chars": 100} / {"max_lines": 5}     (hint dict; reserved keys)
+      - {"agent:user": "preview", ...}            (per-role map; arbitrary keys)
+      - {"PowerShell": {"max_chars": 50}, ...}    (per-tool override at level 1
+                                                   of the 5-level hierarchy)
+
+    Newline_policy follows the same shapes (NewlinePolicy enum value, string,
+    or per-role map of either).
+    """
+    verbosity: Optional[Union[str, dict]] = None
+    formatter: str = "default"
+    newline_policy: Optional[Union[NewlinePolicy, str, dict]] = None
+    role_labels: Optional[dict[str, str]] = None  # per-channel override of global ROLE_LABELS
+    suppress_markers: bool = False  # opt out of session-marker broadcast (v0.3.7 #39)
 
 
 # ============================================================================
@@ -104,9 +218,15 @@ class PerformanceConfig:
 
 @dataclass
 class ChannelConfig:
-    """Configuration for a single log channel."""
+    """Configuration for a single log channel.
+
+    `file_prefix` and `enabled` stay top-level for ergonomics + JSON
+    backwards compatibility. v0.3.7 adds `options: ChannelOptions` for
+    per-channel verbosity, formatter, newline policy, and role labels.
+    """
     file_prefix: str
     enabled: bool = True
+    options: ChannelOptions = field(default_factory=ChannelOptions)
 
 
 def _default_channels() -> dict[str, ChannelConfig]:
@@ -241,12 +361,37 @@ class SessionContext:
 
 @dataclass
 class LogEntry:
-    """Represents a formatted log entry."""
+    """Structured content from a handler, ready for per-channel formatting.
 
-    timestamp: Optional[datetime]
-    tool_name: str
-    content: str
-    pwd: Optional[str]
+    Repurposed in v0.3.7 (was dead code in v0.3.6 — defined but never
+    instantiated). Now the contract between handlers (which know what
+    happened) and formatters (which know how to display it for each
+    channel). The field set is intentionally rich enough to feed any
+    formatter we ship now or later (default, chat, jsonl, xml, custom)
+    so future formatter additions don't require handler changes.
+
+    Field semantics:
+      raw_content:    full unescaped text (universal — every formatter needs this)
+      role:           hierarchical role identifier (e.g., "user", "agent:senior-engineer:ai",
+                      "edit", "bash:powershell"). See ROLES.
+      summary:        rich format template with `{snippet}` placeholder for the
+                      `default` formatter. e.g., '"path:14" ← {snippet} (-2/+3L)'.
+                      Other formatters may ignore. None = formatter uses raw_content directly.
+      metadata:       formatter-specific extras (path, line, delta, mcp_server, etc.)
+      timestamp:      event time (universal)
+      tool_name:      original tool name for tool-derived entries (Edit, Bash, ...) — None for prose
+      agent_context:  subagent type if relevant
+      is_failure:     failure flag (default formatter adds [FAILED:] annotation)
+      failure_reason: human-readable reason
+      error_output:   captured stderr (multi-line OK)
+    """
+    raw_content: str
+    role: str
+    summary: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    timestamp: Optional[datetime] = None
+    tool_name: Optional[str] = None
+    agent_context: Optional[str] = None
     is_failure: bool = False
     failure_reason: Optional[str] = None
     error_output: Optional[str] = None

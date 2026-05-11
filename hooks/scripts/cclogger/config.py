@@ -14,7 +14,79 @@ from pathlib import Path
 from typing import Any
 
 from cclogger.debug import debug_log
-from cclogger.models import ChannelConfig, Config
+from cclogger.models import (
+    RESERVED_VERBOSITY_KEYS,
+    ChannelConfig,
+    ChannelOptions,
+    Config,
+)
+
+
+# ============================================================================
+# Channel-options validation helpers (v0.3.7 Phase 1)
+# ============================================================================
+
+
+def _validate_verbosity_dict(verbosity: dict, channel_name: str) -> dict:
+    """Inspect a verbosity dict; reject role-name collisions with reserved keys.
+
+    Returns the dict (possibly with bogus role-keys filtered out + debug_log warnings).
+    Pure hint dicts (only reserved keys) pass through unchanged.
+
+    Behavior:
+      - Pure hint dict ({"max_chars": N})            → returned as-is
+      - Pure per-role map ({"agent:user": "preview"}) → returned as-is
+      - Mixed (some reserved + some non-reserved keys, e.g.,
+        {"max_chars": "preview", "user": "full"})    → reserved keys logged + dropped;
+                                                       remaining keys returned as per-role map
+    """
+    if not isinstance(verbosity, dict) or not verbosity:
+        return verbosity
+    reserved_in_dict = {k for k in verbosity if k in RESERVED_VERBOSITY_KEYS}
+    non_reserved = {k for k in verbosity if k not in RESERVED_VERBOSITY_KEYS}
+    # Pure hint dict (all keys are reserved) → keep
+    if reserved_in_dict and not non_reserved:
+        return verbosity
+    # Pure role map (no reserved keys) → keep
+    if non_reserved and not reserved_in_dict:
+        return verbosity
+    # Mixed → ambiguous. Drop the reserved keys (they can't be roles) and
+    # log a warning. The remaining is treated as a per-role map.
+    debug_log(
+        f"channel '{channel_name}': verbosity dict mixes reserved keys "
+        f"({sorted(reserved_in_dict)}) with role keys ({sorted(non_reserved)}). "
+        f"Reserved keys cannot be role names — dropping them. "
+        f"Use a pure hint dict OR pure role map; not both."
+    )
+    return {k: v for k, v in verbosity.items() if k not in RESERVED_VERBOSITY_KEYS}
+
+
+def _build_channel_options(opts_data: Any, channel_name: str) -> ChannelOptions:
+    """Construct a ChannelOptions from a JSON dict (or None)."""
+    if not isinstance(opts_data, dict):
+        return ChannelOptions()
+    kwargs: dict[str, Any] = {}
+    if "verbosity" in opts_data:
+        v = opts_data["verbosity"]
+        if isinstance(v, dict):
+            v = _validate_verbosity_dict(v, channel_name)
+        kwargs["verbosity"] = v
+    if "formatter" in opts_data and isinstance(opts_data["formatter"], str):
+        kwargs["formatter"] = opts_data["formatter"]
+    if "newline_policy" in opts_data:
+        # Stored as-is (string or dict); resolved at format time via _coerce_newline_policy.
+        # Per-role dicts also validated for reserved-key collisions.
+        np = opts_data["newline_policy"]
+        if isinstance(np, dict):
+            np = _validate_verbosity_dict(np, channel_name)
+        kwargs["newline_policy"] = np
+    if "role_labels" in opts_data and isinstance(opts_data["role_labels"], dict):
+        kwargs["role_labels"] = {
+            str(k): str(v) for k, v in opts_data["role_labels"].items()
+        }
+    if "suppress_markers" in opts_data:
+        kwargs["suppress_markers"] = bool(opts_data["suppress_markers"])
+    return ChannelOptions(**kwargs)
 
 
 # ============================================================================
@@ -269,10 +341,15 @@ class ConfigLoader:
                 channel_name = channel_file.stem
                 channel_data = load_config_file(channel_file)
                 if isinstance(channel_data, dict) and "file_prefix" in channel_data:
-                    routing["channels"][channel_name] = {
+                    channel_dict = {
                         "file_prefix": channel_data["file_prefix"],
                         "enabled": channel_data.get("enabled", True),
                     }
+                    # v0.3.7: pass options through verbatim; _apply_new_config
+                    # constructs the ChannelOptions instance with validation.
+                    if "options" in channel_data:
+                        channel_dict["options"] = channel_data["options"]
+                    routing["channels"][channel_name] = channel_dict
 
         # overrides.json -- category_routes + tool_overrides
         overrides_path = subdir / "overrides.json"
@@ -343,9 +420,15 @@ class ConfigLoader:
             if isinstance(channels, dict):
                 for name, channel_data in channels.items():
                     if isinstance(channel_data, dict) and "file_prefix" in channel_data:
+                        # v0.3.7: build ChannelOptions if `options` present;
+                        # otherwise default ChannelOptions() preserves Phase 0 behavior.
+                        opts = _build_channel_options(
+                            channel_data.get("options"), name
+                        )
                         config.routing.channels[name] = ChannelConfig(
                             file_prefix=channel_data["file_prefix"],
-                            enabled=channel_data.get("enabled", True)
+                            enabled=channel_data.get("enabled", True),
+                            options=opts,
                         )
 
             # Category routes
