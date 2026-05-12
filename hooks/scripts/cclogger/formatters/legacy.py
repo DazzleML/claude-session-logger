@@ -19,6 +19,7 @@ from typing import Any, Optional
 from cclogger.categorize import categorize_tool
 from cclogger.config import parse_bool
 from cclogger.models import (
+    HINT_VERBOSITY_KEYS,
     RESERVED_VERBOSITY_KEYS,
     ChannelOptions,
     Config,
@@ -76,15 +77,21 @@ def _role_prefix_chain(role: str) -> list[str]:
 
 
 def _is_hint_dict(value: dict) -> bool:
-    """True if `value` is a verbosity-hint dict (only reserved keys), not a per-role map.
+    """True if `value` is a verbosity-hint dict (only HINT keys), not a per-role map.
 
-    A dict containing ONLY reserved keys (max_chars, max_lines, ...) is a
-    hint dict — describes a single verbosity value. A dict containing any
-    non-reserved key is treated as a per-role map.
+    A dict containing ONLY hint keys (max_chars, max_lines) is a hint dict —
+    describes a single verbosity value. A dict containing any other key
+    (including the per-role-reserved `_default` or any role name) is treated
+    as a per-role map.
+
+    Phase 2+3: split from the broader RESERVED_VERBOSITY_KEYS set so the new
+    `_default` reserved key (used for per-role-dict fallback) doesn't make a
+    dict look like a hint dict. A dict like {"_default": "full", "write": ...}
+    is per-role with a fallback, not a hint.
     """
     if not value:
         return False  # empty dict — treat as no override
-    return all(k in RESERVED_VERBOSITY_KEYS for k in value.keys())
+    return all(k in HINT_VERBOSITY_KEYS for k in value.keys())
 
 
 def _verbosity_value_to_int(value: Any, global_default: int) -> int:
@@ -147,7 +154,13 @@ def _resolve_verbosity(
         for prefix in _role_prefix_chain(role):
             if prefix in verbosity:
                 return _verbosity_value_to_int(verbosity[prefix], global_default)
-        # No match in dict → global default
+        # Level 4 (Phase 2+3 extension): `_default` key inside a per-role dict
+        # acts as the channel-level fallback. Lets a channel express
+        # "full for everything, except these tools at N chars" — needed for
+        # sesslog to truncate Write/Edit while keeping prose full.
+        if "_default" in verbosity:
+            return _verbosity_value_to_int(verbosity["_default"], global_default)
+        # No match in dict + no _default → global default
         return global_default
 
     # Unknown shape → global default
@@ -195,6 +208,9 @@ def _resolve_newline_policy(
         for prefix in _role_prefix_chain(role):
             if prefix in policy:
                 return _coerce_newline_policy(policy[prefix])
+        # Level 4 (Phase 2+3 extension): `_default` key as channel-level fallback
+        if "_default" in policy:
+            return _coerce_newline_policy(policy["_default"])
         # No match → ESCAPE default
         return NewlinePolicy.ESCAPE
 
@@ -379,11 +395,34 @@ def truncate_preview(
 
 
 def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) -> str:
-    """Extract command content based on tool type."""
+    """Extract command content based on tool type.
+
+    Phase 2+3 Step 7: thin wrapper over get_command_content_structured() that
+    returns just the legacy_string field. New callers should use the
+    structured form directly to access raw_content + summary_template for
+    per-channel snippet substitution.
+    """
+    return get_command_content_structured(tool_info, config).legacy_string
+
+
+def get_command_content_structured(
+    tool_info: ToolInfo, config: Optional[Config] = None,
+):
+    """Extract command content as a CommandContent dataclass.
+
+    Returns CommandContent(raw_content, legacy_string, summary_template).
+    For rich-format handlers (Write, Edit, Skill), summary_template carries
+    a `{snippet}` placeholder so per-channel verbosity can apply truncation
+    in the formatter dispatch. For non-rich handlers, summary_template is
+    None and the legacy_string IS the content (no per-channel truncation).
+    """
+    from cclogger.models import CommandContent
+
     tool_input = tool_info.input
 
     if tool_info.name in ("Bash", "PowerShell"):
-        return tool_input.get("command", "")
+        cmd = tool_input.get("command", "")
+        return CommandContent(raw_content=cmd, legacy_string=cmd, summary_template=None)
 
     elif tool_info.name == "Read":
         path = tool_input.get("file_path", "")
@@ -391,73 +430,77 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
         limit = tool_input.get("limit")    # Number of lines to read
 
         if not path:
-            return ""
+            return CommandContent(raw_content="", legacy_string="", summary_template=None)
 
         # Build path with line info for VS Code clickability
         if offset:
-            # offset makes it clickable at that line
             if limit:
-                # Show range: path:start-end
                 end_line = offset + limit - 1
                 path_display = f"{path}:{offset}-{end_line}"
             else:
-                # Just starting line: path:line
                 path_display = f"{path}:{offset}"
         else:
             path_display = path
 
-        # Add line count suffix if limit specified without offset
         if limit and not offset:
-            return f'"{path_display}" ({limit}L)'
-        return f'"{path_display}"'
+            s = f'"{path_display}" ({limit}L)'
+        else:
+            s = f'"{path_display}"'
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Write":
         path = tool_input.get("file_path", "")
         content = tool_input.get("content", "")
-        preview = truncate_preview(content, config=config)
         line_count = len(content.splitlines()) if content else 0
         line_info = f" ({line_count}L)" if line_count > 0 else ""
-        if path and preview:
-            return f'"{path}" ← "{preview}"{line_info}'
-        return f'"{path}"' if path else ""
+        if path and content:
+            preview = truncate_preview(content, config=config)
+            legacy = f'"{path}" ← "{preview}"{line_info}'
+            template = f'"{path}" ← "{{snippet}}"{line_info}'
+            return CommandContent(raw_content=content, legacy_string=legacy, summary_template=template)
+        s = f'"{path}"' if path else ""
+        return CommandContent(raw_content=content, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Edit":
         path = tool_input.get("file_path", "")
         old_string = tool_input.get("old_string", "")
         new_string = tool_input.get("new_string", "")
-        preview = truncate_preview(new_string, config=config)
-        # Calculate line delta
         old_lines = len(old_string.splitlines()) if old_string else 0
         new_lines = len(new_string.splitlines()) if new_string else 0
         if old_lines == new_lines:
             line_info = f" ({new_lines}L)" if new_lines > 0 else ""
         else:
             line_info = f" (-{old_lines}/+{new_lines}L)"
-        # Find line number for clickable file:line format
         line_num = find_line_number(path, new_string, config=config) if path and new_string else None
         path_with_line = f"{path}:{line_num}" if line_num else path
-        if path and preview:
-            return f'"{path_with_line}" ← "{preview}"{line_info}'
-        return f'"{path_with_line}"' if path else ""
+        if path and new_string:
+            preview = truncate_preview(new_string, config=config)
+            legacy = f'"{path_with_line}" ← "{preview}"{line_info}'
+            template = f'"{path_with_line}" ← "{{snippet}}"{line_info}'
+            return CommandContent(raw_content=new_string, legacy_string=legacy, summary_template=template)
+        s = f'"{path_with_line}"' if path else ""
+        return CommandContent(raw_content=new_string, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "MultiEdit":
         path = tool_input.get("file_path", "")
-        return f'"{path}"' if path else ""
+        s = f'"{path}"' if path else ""
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "TodoWrite":
         todos = tool_input.get("todos", [])
-        return json.dumps(todos, separators=(",", ":"))
+        s = json.dumps(todos, separators=(",", ":"))
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "LS":
         path = tool_input.get("path", "")
-        return f'"{path}"' if path else ""
+        s = f'"{path}"' if path else ""
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Glob":
         pattern = tool_input.get("pattern", "")
         search_path = tool_input.get("path", "")
-        if search_path:
-            return f'{pattern} in "{search_path}"'
-        return pattern
+        s = f'{pattern} in "{search_path}"' if search_path else pattern
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Grep":
         pattern = tool_input.get("pattern", "")
@@ -468,9 +511,6 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
         if glob_filter:
             result += f' | "{glob_filter}"'
 
-        # Add path context if specified
-        # Use "in" only when glob is present (to distinguish glob from path)
-        # Use "|" when path only (cleaner, no ambiguity)
         if search_path:
             cwd = tool_info.raw_json.get("cwd", "")
             separator = " in " if glob_filter else " | "
@@ -479,55 +519,58 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
                 cwd_obj = Path(cwd).resolve() if cwd else None
 
                 if search_path_obj.is_file():
-                    # File - always full path for VS Code clickability
                     result += f'{separator}"{search_path_obj}"'
                 elif cwd_obj and search_path_obj != cwd_obj:
-                    # Directory - check if inside or outside cwd
                     try:
                         rel = search_path_obj.relative_to(cwd_obj)
-                        # Inside cwd - use relative path (compact)
                         result += f'{separator}"{rel}/"'
                     except ValueError:
-                        # Outside cwd - use full path
                         result += f'{separator}"{search_path_obj}"'
-                # If search_path == cwd, omit (user knows where they are)
             except Exception:
-                # Fallback - just show the path as given
                 result += f'{separator}"{search_path}"'
 
-        return result
+        return CommandContent(raw_content=result, legacy_string=result, summary_template=None)
 
     elif tool_info.name in ("WebSearch", "WebFetch"):
-        return tool_input.get("url") or tool_input.get("query", "")
+        s = tool_input.get("url") or tool_input.get("query", "")
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name in ("EnterPlanMode", "ExitPlanMode"):
-        # Plan mode tools have no meaningful params - just marker
-        return ""
+        return CommandContent(raw_content="", legacy_string="", summary_template=None)
 
     elif tool_info.name == "TaskOutput":
-        return tool_input.get("task_id", "")
+        s = tool_input.get("task_id", "")
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "TaskStop":
-        return tool_input.get("task_id", "")
+        s = tool_input.get("task_id", "")
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name in ("tool_search_tool_regex", "tool_search_tool_bm25"):
-        # ToolSearch for discovering MCP tools dynamically
-        return tool_input.get("query", "")
+        s = tool_input.get("query", "")
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Task":
-        return tool_input.get("prompt", "")
+        s = tool_input.get("prompt", "")
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "Skill":
+        # Skill keeps its own preview length (config.performance.skill_args_length,
+        # default 100) — distinct from the global content_preview_length (default 20).
+        # We pre-truncate at handler time and skip the {snippet} template path so
+        # the per-channel verbosity walk doesn't override the Skill-specific budget.
         skill_name = tool_input.get("skill", "")
         skill_args = tool_input.get("args", "")
         max_args = config.performance.skill_args_length if config else 100
         if skill_args and max_args > 0:
             preview = truncate_preview(skill_args, max_len=max_args, config=config)
-            return f'{skill_name} ← "{preview}"'
-        return skill_name
+            legacy = f'{skill_name} ← "{preview}"'
+            return CommandContent(raw_content=legacy, legacy_string=legacy, summary_template=None)
+        return CommandContent(raw_content=skill_name, legacy_string=skill_name, summary_template=None)
 
     elif tool_info.name in ("TaskCreate", "TaskUpdate", "TaskList", "TaskGet"):
-        return get_task_content(tool_info.name, tool_info.raw_json, config)
+        s = get_task_content(tool_info.name, tool_info.raw_json, config)
+        return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     else:
         # For unknown tools, try common field names. Order matters: more
@@ -537,8 +580,9 @@ def get_command_content(tool_info: ToolInfo, config: Optional[Config] = None) ->
         # match these shapes will "just work" without needing a custom handler.
         for field in ("command", "pattern", "url", "prompt", "query", "skill", "subject", "content"):
             if field in tool_input:
-                return str(tool_input[field])
-        return ""
+                s = str(tool_input[field])
+                return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
+        return CommandContent(raw_content="", legacy_string="", summary_template=None)
 
 
 # ============================================================================
@@ -574,9 +618,51 @@ def format_tool_name(tool_info: ToolInfo) -> str:
     return tool_info.name
 
 
-def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
-                   event_time: datetime) -> str:
-    """Generate formatted log entry based on configuration."""
+def _role_from_tool_name(tool_name: str) -> str:
+    """Map a tool name to a hierarchical role string per ROLES.
+
+    Examples:
+      "Bash" -> "bash", "PowerShell" -> "powershell",
+      "Edit" -> "edit", "MultiEdit" -> "multi-edit",
+      "TodoWrite" -> "todo-write", "WebSearch" -> "web-search".
+
+    Tools not in the ROLES enum get their tool_name normalized to kebab-case;
+    Step 10 of Phase 2+3 wires the ??:<role> fallback warning.
+    """
+    # Camel/PascalCase -> kebab-case for hierarchical role strings
+    out_chars: list[str] = []
+    for i, ch in enumerate(tool_name):
+        if ch.isupper() and i > 0 and tool_name[i - 1].islower():
+            out_chars.append("-")
+        out_chars.append(ch.lower())
+    return "".join(out_chars)
+
+
+def generate_entry(tool_info: ToolInfo, config: Config, command_content,
+                   event_time: datetime):
+    """Generate a LogEntry for the tool call.
+
+    Phase 2+3 Step 7: command_content can be a string (legacy callers) or a
+    CommandContent dataclass (Phase 2+3 caller in log-command.py). When a
+    CommandContent is provided with a non-None summary_template, the LogEntry
+    carries the template in `summary` so DefaultFormatter can substitute the
+    `{snippet}` placeholder per channel verbosity. The `_legacy_complete`
+    metadata is also populated for backward compat — channels with no
+    options on a rich-format entry still get byte-identical legacy output.
+    """
+    from cclogger.models import CommandContent, LogEntry
+
+    if isinstance(command_content, CommandContent):
+        cc = command_content
+        legacy_string = cc.legacy_string
+        raw_content = cc.raw_content
+        summary_template = cc.summary_template
+    else:
+        # Legacy str caller — wrap as a non-rich CommandContent
+        legacy_string = command_content
+        raw_content = command_content
+        summary_template = None
+
     datetime_part = format_datetime(config.datetime_mode, event_time)
 
     pwd_part = ""
@@ -588,28 +674,66 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content: str,
 
     # Prefix uncategorized tools with `?` for grep-friendly identification
     # within any channel. Pattern remains parseable: `{?ToolName: ...}`.
-    if categorize_tool(tool_info.name) == "unknown":
+    is_unknown = categorize_tool(tool_info.name) == "unknown"
+    if is_unknown:
         tool_display = f"?{tool_display}"
 
-    # Determine content based on verbosity and action-only
+    # Determine the legacy body content based on verbosity + action-only.
+    # This builds the v0.3.6-shaped string used to populate _legacy_complete
+    # so non-rich entries (and channels with no options) stay byte-identical.
     if should_use_action_only(tool_info.name, config):
-        content_part = tool_display
+        legacy_body = tool_display
     else:
         if config.verbosity == 0:
-            content_part = command_content
+            legacy_body = legacy_string
         elif config.verbosity == 1:
-            content_part = command_content
+            legacy_body = legacy_string
         elif config.verbosity == 2:
-            content_part = f"{tool_display}: {command_content}"
+            legacy_body = f"{tool_display}: {legacy_string}"
         elif config.verbosity == 3:
             if tool_info.description:
-                content_part = f"{tool_display}: {command_content} {tool_info.description}"
+                legacy_body = f"{tool_display}: {legacy_string} {tool_info.description}"
             else:
-                content_part = f"{tool_display}: {command_content}"
+                legacy_body = f"{tool_display}: {legacy_string}"
         elif config.verbosity == 4:
             tool_input_json = json.dumps(tool_info.input, separators=(",", ":"))
-            content_part = f"{tool_display}: {command_content} {tool_input_json}"
+            legacy_body = f"{tool_display}: {legacy_string} {tool_input_json}"
         else:
-            content_part = f"{tool_display}: {command_content}"
+            legacy_body = f"{tool_display}: {legacy_string}"
 
-    return f"{datetime_part}{{{content_part} }}{pwd_part}"
+    legacy_complete = f"{datetime_part}{{{legacy_body} }}{pwd_part}"
+
+    # Build the LogEntry's `summary` field: when the handler provided a
+    # rich-format template, embed it in the same verbosity-shaped body so
+    # DefaultFormatter can substitute the snippet per channel verbosity.
+    summary: Optional[str] = None
+    if summary_template and not should_use_action_only(tool_info.name, config):
+        if config.verbosity == 0 or config.verbosity == 1:
+            summary = summary_template
+        elif config.verbosity == 2:
+            summary = f"{tool_display}: {summary_template}"
+        elif config.verbosity == 3:
+            if tool_info.description:
+                summary = f"{tool_display}: {summary_template} {tool_info.description}"
+            else:
+                summary = f"{tool_display}: {summary_template}"
+        elif config.verbosity == 4:
+            tool_input_json = json.dumps(tool_info.input, separators=(",", ":"))
+            summary = f"{tool_display}: {summary_template} {tool_input_json}"
+        else:
+            summary = f"{tool_display}: {summary_template}"
+
+    return LogEntry(
+        raw_content=raw_content,
+        role=_role_from_tool_name(tool_info.name),
+        summary=summary,
+        metadata={
+            "_legacy_complete": legacy_complete,
+            "pwd_part": pwd_part,
+            "datetime_part": datetime_part,
+            "is_unknown_tool": is_unknown,
+        },
+        timestamp=event_time,
+        tool_name=tool_info.name,
+        agent_context=tool_info.agent_context,
+    )

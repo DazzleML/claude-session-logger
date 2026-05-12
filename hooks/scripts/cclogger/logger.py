@@ -16,7 +16,7 @@ from typing import Any, Optional
 from cclogger.categorize import get_subtype
 from cclogger.debug import debug_log
 from cclogger.file_io import atomic_append, check_time_gap
-from cclogger.formatters import format_datetime
+from cclogger.formatters import format_datetime, format_for_channel
 from cclogger.markers import (
     count_compaction_markers,
     get_run_number,
@@ -259,20 +259,26 @@ class SessionLogger:
 
     def log_entry(
         self,
-        entry: str,
+        entry,  # str (transitional, conversation.py until Step 6) or LogEntry
         tool_name: str,
         tool_category: str,
-        task_content: Optional[str] = None,
         event_time: Optional[datetime] = None,
         raw_json: Optional[dict[str, Any]] = None,
     ) -> None:
         """Write entry to appropriate log files based on routing configuration.
 
+        Phase 2+3 Step 5: the `task_content` parameter is gone — task-tool
+        callers now stuff the task_content string into the LogEntry's
+        metadata dict, and the `tasks` channel declares
+        `formatter="task-only"` in its default ChannelOptions. The dispatch
+        in `format_for_channel()` picks the right formatter automatically;
+        no per-channel special cases here anymore.
+
         Args:
-            entry: The formatted log entry string
+            entry: A LogEntry (handler-emitted, post-Step-4) or str
+                (transitional shape from conversation.py until Step 6).
             tool_name: The name of the tool (for routing overrides)
             tool_category: The category of the tool (e.g., "task", "bash")
-            task_content: Optional task-specific content for task tools
             event_time: The event timestamp (ensures consistency across channels)
             raw_json: Optional raw event payload (used for subtype extraction)
         """
@@ -305,13 +311,49 @@ class SessionLogger:
                 gap_cache[file_path] = check_time_gap(file_path, self.config.datetime_mode, ts)
             add_gap = gap_cache[file_path]
 
-            # Special handling for tasks channel - use task_content format
-            if channel_name == "tasks" and task_content:
-                datetime_part = format_datetime(self.config.datetime_mode, ts)
-                task_entry = f"{datetime_part}{{{task_content} }}"
-                atomic_append(file_path, task_entry, add_gap=add_gap)
-            else:
-                atomic_append(file_path, entry, add_gap=add_gap)
+            # Resolve channel options. For subtype-derived channels
+            # (e.g., "shell-powershell" from subtype_routing) that aren't
+            # explicitly declared in routing.channels, inherit the base
+            # channel's options ("shell" in this case). Standard
+            # inheritance pattern: declare-to-override, omit-to-inherit.
+            channel_opts = self._resolve_channel_options(channel, channel_name)
+
+            # Route through formatter dispatch. For str entries (still
+            # emitted by conversation.py until Step 6), DefaultFormatter
+            # passes through. For LogEntry entries (handler-emitted), the
+            # selected formatter handles assembly per channel options —
+            # including the task-only formatter on the `tasks` channel.
+            formatted = format_for_channel(
+                entry, channel_opts, channel_name, self.config
+            )
+            atomic_append(file_path, formatted, add_gap=add_gap)
+
+    def _resolve_channel_options(self, channel, channel_name: str):
+        """Return ChannelOptions for `channel_name`, inheriting base if needed.
+
+        Subtype-derived channel names follow the `<base>-<subtype>` shape
+        (e.g., "shell-powershell", "tools-github") and aren't explicitly
+        declared in routing.channels — they're manufactured at log time when
+        subtype_routing is enabled. Without inheritance, these channels
+        would silently fall back to global defaults, losing the parent
+        channel's customization (e.g., `tools` channel's max_chars=100 would
+        not apply to `.tools-github_*.log`).
+
+        Resolution order:
+          1. If `channel` is explicitly declared (and we have it), use its options
+             (declare-to-override path)
+          2. Else if `channel_name` has the `<base>-<subtype>` shape, look up
+             the base channel and inherit its options (omit-to-inherit path)
+          3. Else None (global defaults)
+        """
+        if channel is not None:
+            return channel.options
+        if "-" in channel_name:
+            base_name = channel_name.partition("-")[0]
+            base_channel = self.config.routing.channels.get(base_name)
+            if base_channel is not None:
+                return base_channel.options
+        return None
 
     def log_failure(self, failure_entry: str) -> None:
         """Log a failure entry to history files."""

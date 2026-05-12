@@ -35,7 +35,7 @@ from cclogger.debug import DEBUG_LOG, _warn_unknown_tool_once, debug_log
 from cclogger.failure_detection import detect_and_log_failure
 from cclogger.formatters import (
     generate_entry,
-    get_command_content,
+    get_command_content_structured,
     get_task_content,
     should_log_tool,
 )
@@ -195,30 +195,36 @@ def main() -> None:
         print('{"continue": true}')
         return
 
-    # Extract command content
-    command_content = get_command_content(tool_info, config)
+    # Extract command content (Phase 2+3 Step 7: structured form so handlers
+    # can carry rich-format templates with `{snippet}` placeholders for
+    # per-channel verbosity).
+    command_content = get_command_content_structured(tool_info, config)
 
     # If extraction returned nothing despite input being present, the tool
     # likely has no specific handler AND its fields don't match the generic
     # fallback list. Warn once per tool_name (across all hook invocations,
     # via sentinel file) so we can add a proper handler without spamming the
     # debug log on every call.
-    if not command_content and tool_info.input:
+    if not command_content.legacy_string and tool_info.input:
         _warn_unknown_tool_once(tool_info.name, list(tool_info.input.keys()))
 
     # Generate entry (using captured event_time for consistency)
     entry = generate_entry(tool_info, config, command_content, event_time)
 
-    # Get task content if applicable
+    # Get task content if applicable. Phase 2+3 Step 5 stuffs this into the
+    # LogEntry's metadata so the `task-only` formatter can find it without
+    # log_entry() needing a special-case parameter.
     tool_category = categorize_tool(tool_info.name)
-    task_content = None
     if tool_category == "task":
-        task_content = get_task_content(tool_info.name, tool_info.raw_json, config)
+        entry.metadata["task_content"] = get_task_content(
+            tool_info.name, tool_info.raw_json, config
+        )
+        entry.metadata["raw_json"] = tool_info.raw_json
 
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init
     logger = SessionLogger(config, session_context, event_time)
-    logger.log_entry(entry, tool_info.name, tool_category, task_content, event_time, raw_json=tool_info.raw_json)
+    logger.log_entry(entry, tool_info.name, tool_category, event_time=event_time, raw_json=tool_info.raw_json)
 
     # Check for failures (Bash only, uses same event_time)
     detect_and_log_failure(tool_info, config, logger, event_time)

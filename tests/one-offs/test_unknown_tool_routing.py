@@ -69,8 +69,10 @@ class TestUnknownCategory:
 
     def test_known_tools_still_categorized_correctly(self):
         # Spot-check a few to ensure rename didn't break categorization
+        # v0.3.7 Phase 2+3: Read moved from "system" to "io" so it routes to
+        # the opt-in .fileio_* channel alongside Write/Edit/etc.
         assert categorize_tool("Bash") == "bash"
-        assert categorize_tool("Read") == "system"
+        assert categorize_tool("Read") == "io"
         assert categorize_tool("Write") == "io"
         assert categorize_tool("TaskCreate") == "task"
         assert categorize_tool("Skill") == "skill"
@@ -120,10 +122,13 @@ class TestDefaultChannels:
         assert channels["unknowns"].enabled is True
 
     def test_existing_channels_still_present(self):
-        # Updated for v0.3.0 (#28): adds `tools` channel
-        # Updated for v0.3.5+ (#33-#35): adds `convo` channel
+        # v0.3.0 (#28): tools channel added
+        # v0.3.5+ (#33-#35): convo channel added
+        # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
         channels = _default_channels()
-        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools", "convo"}
+        assert set(channels.keys()) == {
+            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio",
+        }
 
 
 class TestDefaultCategoryRoutes:
@@ -158,13 +163,16 @@ class TestMarkerPrefix:
     def test_unknown_tool_gets_question_mark_prefix(self):
         ti = _make_tool_info("MysteryTool", {"command": "do something"})
         config = self._make_config()
-        entry = generate_entry(ti, config, "do something", datetime(2026, 5, 1, 12, 0, 0))
+        # Phase 2+3 Step 4: generate_entry returns LogEntry; legacy string lives in metadata
+        log_entry = generate_entry(ti, config, "do something", datetime(2026, 5, 1, 12, 0, 0))
+        entry = log_entry.metadata["_legacy_complete"]
         assert "{?MysteryTool:" in entry
 
     def test_known_tool_has_no_prefix(self):
         ti = _make_tool_info("Bash", {"command": "ls"})
         config = self._make_config()
-        entry = generate_entry(ti, config, "ls", datetime(2026, 5, 1, 12, 0, 0))
+        log_entry = generate_entry(ti, config, "ls", datetime(2026, 5, 1, 12, 0, 0))
+        entry = log_entry.metadata["_legacy_complete"]
         assert "{Bash:" in entry
         assert "{?Bash:" not in entry
 
@@ -172,7 +180,8 @@ class TestMarkerPrefix:
         # Pattern `{ToolName:` (after sanitization for `?`) should still parseable
         ti = _make_tool_info("Strange", {"command": "x"})
         config = self._make_config()
-        entry = generate_entry(ti, config, "x", datetime(2026, 5, 1, 12, 0, 0))
+        log_entry = generate_entry(ti, config, "x", datetime(2026, 5, 1, 12, 0, 0))
+        entry = log_entry.metadata["_legacy_complete"]
         # Marker is between `{` and tool name, NOT before `{`
         assert entry.count("{?") == 1
         assert "?{" not in entry  # Wrong placement would break opening brace anchor

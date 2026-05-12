@@ -76,6 +76,12 @@ DEBUG_LOG = Path.home() / ".claude" / "logs" / "hook-debug.log"
 # (across hook subprocesses, not just within one process) skip the warning.
 # Delete the directory or individual sentinels to re-trigger warnings.
 UNKNOWN_TOOL_WARN_DIR = Path.home() / ".claude" / "logs" / ".unknown_tool_warnings"
+# Phase 2+3 Step 10: parallel sentinel directory for unknown role names.
+# When a LogEntry's role is not in the closed ROLES enum, formatters render
+# it as `??:<role>` (visible in logs) AND emit a one-time debug-log warning
+# via this helper. Sibling directory keeps the unknown-tool and unknown-role
+# warning streams independent.
+UNKNOWN_ROLE_WARN_DIR = Path.home() / ".claude" / "logs" / ".unknown_role_warnings"
 
 
 def _warn_unknown_tool_once(tool_name: str, fields: list[str]) -> None:
@@ -106,6 +112,34 @@ def _warn_unknown_tool_once(tool_name: str, fields: list[str]) -> None:
         )
     except Exception:
         pass  # Throttling is best-effort; never break the hook
+
+
+def _warn_unknown_role_once(role: str) -> None:
+    """One-time debug-log warning for a role not in the closed ROLES enum.
+
+    Mirrors the v0.2.1 unknown-tool throttled-warning pattern with a sibling
+    sentinel directory so the two warning streams stay independent. The role
+    will already render as `??:<role>` in formatters; this helper surfaces a
+    debug-log breadcrumb so we can add the role to ROLES (and its label to
+    ROLE_LABELS) when one shows up in real-world traffic.
+
+    Best-effort — silent on errors so the hook itself never breaks.
+    """
+    try:
+        UNKNOWN_ROLE_WARN_DIR.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^A-Za-z0-9_\-.:]", "_", role)
+        sentinel = UNKNOWN_ROLE_WARN_DIR / f"{safe_name}.warned"
+        try:
+            sentinel.open("x").close()
+        except FileExistsError:
+            return
+        debug_log(
+            f"Unknown role '{role}' rendered as '??:{role}' in logs - "
+            f"add to ROLES set (and ROLE_LABELS for a display label) in "
+            f"cclogger/models.py if this shows up regularly"
+        )
+    except Exception:
+        pass
 
 
 def debug_log(message: str) -> None:

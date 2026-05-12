@@ -28,37 +28,46 @@ from cclogger.models import (
 
 
 def _validate_verbosity_dict(verbosity: dict, channel_name: str) -> dict:
-    """Inspect a verbosity dict; reject role-name collisions with reserved keys.
+    """Inspect a verbosity dict; classify + reject hint/role-key ambiguity.
 
-    Returns the dict (possibly with bogus role-keys filtered out + debug_log warnings).
-    Pure hint dicts (only reserved keys) pass through unchanged.
+    Returns the dict (possibly with bogus hint-keys filtered out + debug_log warnings).
+
+    Phase 2+3 introduces `_default` as a per-role-dict fallback key. Unlike
+    `max_chars`/`max_lines` (hint keys that describe a single value), `_default`
+    is meant to coexist with role keys in a per-role map. Validation handles
+    both: hint keys (max_chars, max_lines) cannot coexist with role keys;
+    `_default` can.
 
     Behavior:
-      - Pure hint dict ({"max_chars": N})            → returned as-is
-      - Pure per-role map ({"agent:user": "preview"}) → returned as-is
-      - Mixed (some reserved + some non-reserved keys, e.g.,
-        {"max_chars": "preview", "user": "full"})    → reserved keys logged + dropped;
-                                                       remaining keys returned as per-role map
+      - Pure hint dict ({"max_chars": N})                  → returned as-is
+      - Pure per-role map ({"agent:user": "preview"})      → returned as-is
+      - Per-role map with _default ({"_default": "full",
+        "write": {"max_chars": 20}})                       → returned as-is (preferred shape)
+      - Mixed hint+role ({"max_chars": 50, "user": "full"}) → hint keys logged + dropped;
+                                                              remaining keys returned as per-role map
     """
+    from cclogger.models import HINT_VERBOSITY_KEYS
+
     if not isinstance(verbosity, dict) or not verbosity:
         return verbosity
-    reserved_in_dict = {k for k in verbosity if k in RESERVED_VERBOSITY_KEYS}
-    non_reserved = {k for k in verbosity if k not in RESERVED_VERBOSITY_KEYS}
-    # Pure hint dict (all keys are reserved) → keep
-    if reserved_in_dict and not non_reserved:
+    hint_in_dict = {k for k in verbosity if k in HINT_VERBOSITY_KEYS}
+    # role-or-_default keys: everything not a hint key
+    non_hint = {k for k in verbosity if k not in HINT_VERBOSITY_KEYS}
+    # Pure hint dict (all keys are hint keys) → keep
+    if hint_in_dict and not non_hint:
         return verbosity
-    # Pure role map (no reserved keys) → keep
-    if non_reserved and not reserved_in_dict:
+    # Pure per-role map (possibly including _default; no hint keys) → keep
+    if non_hint and not hint_in_dict:
         return verbosity
-    # Mixed → ambiguous. Drop the reserved keys (they can't be roles) and
-    # log a warning. The remaining is treated as a per-role map.
+    # Mixed hint + role → ambiguous. Drop the hint keys and log.
     debug_log(
-        f"channel '{channel_name}': verbosity dict mixes reserved keys "
-        f"({sorted(reserved_in_dict)}) with role keys ({sorted(non_reserved)}). "
-        f"Reserved keys cannot be role names — dropping them. "
-        f"Use a pure hint dict OR pure role map; not both."
+        f"channel '{channel_name}': verbosity dict mixes hint keys "
+        f"({sorted(hint_in_dict)}) with role/_default keys ({sorted(non_hint)}). "
+        f"Hint keys (max_chars/max_lines) cannot coexist with role keys — "
+        f"dropping them. Use a pure hint dict OR a per-role map (with optional "
+        f"_default fallback)."
     )
-    return {k: v for k, v in verbosity.items() if k not in RESERVED_VERBOSITY_KEYS}
+    return {k: v for k, v in verbosity.items() if k not in HINT_VERBOSITY_KEYS}
 
 
 def _build_channel_options(opts_data: Any, channel_name: str) -> ChannelOptions:

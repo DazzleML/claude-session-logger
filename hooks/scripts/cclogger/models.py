@@ -27,7 +27,20 @@ from cclogger.debug import debug_log
 #   {"agent:user": "preview", "ai": "full"}     → per-role map (no reserved keys)
 # A user attempting to use a reserved keyword as a role name is rejected by
 # config validation (see cclogger/config.py).
-RESERVED_VERBOSITY_KEYS: set[str] = {"max_chars", "max_lines"}
+#
+# Two semantic groups:
+#   HINT keys (max_chars, max_lines): describe a single verbosity VALUE.
+#     A dict containing only these keys is a "hint dict" — its content is
+#     the verbosity itself, applied uniformly across all entries on the channel.
+#   _default: a per-role-dict FALLBACK key. Lets a per-role verbosity dict
+#     express "this default for unmatched roles, plus these overrides for
+#     specific roles." Without it, unmatched roles fall to the global default
+#     (PerformanceConfig.content_preview_length), which prevents expressing
+#     "channel default = full, but truncate Write/Edit to 20 chars."
+#     Phase 2+3 added this as a v0.3.7 framework completeness fix.
+HINT_VERBOSITY_KEYS: set[str] = {"max_chars", "max_lines"}
+PER_ROLE_RESERVED_KEYS: set[str] = {"_default"}
+RESERVED_VERBOSITY_KEYS: set[str] = HINT_VERBOSITY_KEYS | PER_ROLE_RESERVED_KEYS
 
 # Closed enum of role identifiers handlers can emit. Roles are hierarchical
 # with `:` separator (e.g., "agent:senior-engineer:user", "bash:powershell").
@@ -230,33 +243,111 @@ class ChannelConfig:
 
 
 def _default_channels() -> dict[str, ChannelConfig]:
-    """Create default channel configurations."""
+    """Create default channel configurations.
+
+    Phase 2+3 (Github #38) introduces per-channel ChannelOptions defaults.
+    Channels that need non-default formatter or newline behavior declare it
+    here so the routing dispatch picks the right formatter without
+    hardcoded branches in SessionLogger. Phase 2+3 specifically:
+      - `tasks` uses formatter="task-only" instead of the v0.3.6 hardcoded
+        `if channel_name == "tasks"` branch in log_entry()
+      - `convo` (Step 6) uses formatter="chat" + NewlinePolicy.RENDER for
+        readable multi-line conversation rendering
+    """
     return {
-        "shell": ChannelConfig(file_prefix=".shell_"),
-        "sesslog": ChannelConfig(file_prefix=".sesslog_"),
-        "tasks": ChannelConfig(file_prefix=".tasks_"),
-        "unknowns": ChannelConfig(file_prefix=".unknowns_"),
+        # shell channel: shell-style entries deserve more room than the
+        # global default (20). Phase 2+3 Step 7 bumps to 100 chars per the
+        # design doc rationale ("shell entries are typically longer").
+        "shell": ChannelConfig(
+            file_prefix=".shell_",
+            options=ChannelOptions(verbosity={"max_chars": 100}),
+        ),
+        # sesslog is the "kitchen sink" channel — full content for most
+        # entries (prose, tool calls, etc.), but Write/Edit/MultiEdit entries
+        # are truncated because their `new_string`/`content` are file-sized
+        # and would dominate the log. Users who want full file-operation
+        # content should enable the `.fileio_*` channel instead.
+        # The `_default` per-role-dict fallback (Phase 2+3 framework extension)
+        # makes this expression possible: "full for everything except these
+        # specific roles, which get N chars."
+        "sesslog": ChannelConfig(
+            file_prefix=".sesslog_",
+            options=ChannelOptions(verbosity={
+                "_default": "full",
+                "write": {"max_chars": 20},
+                "edit": {"max_chars": 20},
+                "multi-edit": {"max_chars": 20},
+                "notebook-edit": {"max_chars": 20},
+            }),
+        ),
+        # .fileio_*: opt-in channel that captures FULL content of file I/O
+        # operations (Read/Write/Edit/MultiEdit/NotebookEdit). Disabled by
+        # default — most users don't need the full content captured to disk
+        # since the transcript JSONL already has it. Enable when investigating
+        # file mutation sequences or for diagnostic capture. RENDER newline
+        # policy so multi-line content is readable as diff-style content
+        # rather than escaped single-line `\n`.
+        "fileio": ChannelConfig(
+            file_prefix=".fileio_",
+            enabled=False,
+            options=ChannelOptions(
+                verbosity="full",
+                newline_policy=NewlinePolicy.RENDER,
+            ),
+        ),
+        "tasks": ChannelConfig(
+            file_prefix=".tasks_",
+            options=ChannelOptions(formatter="task-only"),
+        ),
+        # unknowns: 100-char preview matches shell/tools default since
+        # uncategorized tools are usually shell-shaped.
+        "unknowns": ChannelConfig(
+            file_prefix=".unknowns_",
+            options=ChannelOptions(verbosity={"max_chars": 100}),
+        ),
         # AI-activity-without-prose investigation view. Captures everything
         # the OLD pre-v0.2.1 .sesslog_* did (shell + tools + tasks + skills)
         # but excludes unknowns and user/AI conversation prose.
         # The user's primary "find exact tool calls" channel.
-        "tools": ChannelConfig(file_prefix=".tools_"),
+        # 100-char preview gives Edit/Write rich-format snippets enough room.
+        "tools": ChannelConfig(
+            file_prefix=".tools_",
+            options=ChannelOptions(verbosity={"max_chars": 100}),
+        ),
         # Conversation channel (sub-issues #33-#35): captures user prompts,
         # AI text responses, and agent dialogue via the message_user /
         # message_ai / message_agent categories. Enabled by default.
-        "convo": ChannelConfig(file_prefix=".convo_"),
+        # Phase 2+3 Step 6: convo channel uses the chat formatter +
+        # NewlinePolicy.RENDER + verbosity="full" so conversation prose
+        # renders as readable multi-line entries with full content. The
+        # v0.3.6 hardcoded `truncate_preview(prompt, max_len=200)` calls
+        # in conversation.py are removed in favor of channel-options driven
+        # truncation (per-role overrides supported via verbosity dict).
+        "convo": ChannelConfig(
+            file_prefix=".convo_",
+            options=ChannelOptions(
+                verbosity="full",
+                formatter="chat",
+                newline_policy=NewlinePolicy.RENDER,
+            ),
+        ),
     }
 
 
 def _default_category_routes() -> dict[str, list[str]]:
     """Create default category to channel routing."""
     return {
-        # Most categories now route to tools as well as shell + sesslog.
+        # Most categories route to tools + sesslog + shell.
         # `tools` provides the AI-activity investigation view; `sesslog` is
         # the kitchen-sink "everything" channel; `shell` stays the clean
         # shell-history channel.
         "_default": ["shell", "sesslog", "tools"],
         "task": ["shell", "sesslog", "tools", "tasks"],
+        # Phase 2+3: io category (Read/Write/Edit/MultiEdit/NotebookEdit)
+        # also routes to the opt-in `.fileio_*` channel for users who want
+        # full file-operation content captured to disk. fileio is disabled
+        # by default; this route is harmless when fileio.enabled = False.
+        "io": ["shell", "sesslog", "tools", "fileio"],
         # Uncategorized tools go to sesslog and to a dedicated unknowns
         # channel for discovery. NOT routed to shell or tools.
         "unknown": ["sesslog", "unknowns"],
@@ -357,6 +448,33 @@ class SessionContext:
         diverged from build_filename() causing file proliferation (#15).
         """
         return self.get_filename_context()
+
+
+@dataclass
+class CommandContent:
+    """Per-tool extracted content with optional rich-format template.
+
+    Returned by `get_command_content_structured()`. Carries:
+      raw_content:      full unescaped text (e.g., the new_string for Edit,
+                        the content for Write, the args for Skill, the
+                        command for Bash). Used as snippet source when a
+                        summary_template is set; used as the body directly
+                        when not.
+      legacy_string:    the v0.3.6 pre-truncated preview string. Used by
+                        generate_entry to populate `_legacy_complete`
+                        metadata so byte-identical output is preserved for
+                        default channels with no per-channel options.
+      summary_template: rich-format template with `{snippet}` placeholder,
+                        or None for non-rich handlers. When set, the
+                        DefaultFormatter substitutes per-channel-truncated
+                        raw_content into the placeholder. This is what
+                        enables per-channel verbosity for Edit/Write/Skill
+                        rich formats (Phase 2+3 Step 7).
+    """
+
+    raw_content: str
+    legacy_string: str
+    summary_template: Optional[str] = None
 
 
 @dataclass

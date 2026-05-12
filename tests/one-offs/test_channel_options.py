@@ -616,3 +616,772 @@ class TestPhase1Inertness:
         # Default channels present, options populated
         assert "shell" in config.routing.channels
         assert config.routing.channels["shell"].options is not None
+
+
+# ============================================================================
+# Section 13: Formatter dispatch — registry + format_for_channel routing
+# ============================================================================
+
+
+def _make_logentry(**kwargs):
+    """Build a LogEntry with sensible defaults for tests."""
+    from datetime import datetime
+    from cclogger.models import LogEntry
+    defaults = {
+        "raw_content": "",
+        "role": "bash",
+        "tool_name": "Bash",
+        "timestamp": datetime(2026, 5, 11, 0, 0, 0),
+    }
+    defaults.update(kwargs)
+    return LogEntry(**defaults)
+
+
+class TestFormatterRegistry:
+    """Pinned: FORMATTERS registry contains the v0.3.7 shipped formatters."""
+
+    def test_registry_has_default(self):
+        from cclogger.formatters import FORMATTERS, DefaultFormatter
+        assert FORMATTERS["default"] is DefaultFormatter
+
+    def test_registry_has_chat(self):
+        from cclogger.formatters import FORMATTERS, ChatFormatter
+        assert FORMATTERS["chat"] is ChatFormatter
+
+    def test_registry_has_task_only(self):
+        from cclogger.formatters import FORMATTERS, TaskOnlyFormatter
+        assert FORMATTERS["task-only"] is TaskOnlyFormatter
+
+    def test_unknown_formatter_falls_back_to_default(self):
+        """Unknown formatter name in channel options → DefaultFormatter."""
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(formatter="nonexistent-formatter")
+        entry = _make_logentry(raw_content="hello", role="bash")
+        # Should not raise; falls back to default
+        result = format_for_channel(entry, opts, "shell", None)
+        assert isinstance(result, str)
+
+
+class TestFormatForChannelDispatch:
+    """Pinned: format_for_channel routes by channel_opts.formatter."""
+
+    def test_default_formatter_used_when_no_opts(self):
+        from cclogger.formatters import format_for_channel
+        entry = _make_logentry(
+            raw_content="ls -la",
+            role="bash",
+            metadata={"_legacy_complete": "[[ts]] {Bash: ls -la }"},
+        )
+        result = format_for_channel(entry, None, "shell", None)
+        # No options → default formatter → uses _legacy_complete
+        assert result == "[[ts]] {Bash: ls -la }"
+
+    def test_chat_formatter_routes_to_chat(self):
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import ChannelOptions, NewlinePolicy
+        opts = ChannelOptions(
+            verbosity="full",
+            formatter="chat",
+            newline_policy=NewlinePolicy.RENDER,
+        )
+        entry = _make_logentry(
+            raw_content="hello world",
+            role="user",
+            tool_name="UserPromptSubmit",
+        )
+        result = format_for_channel(entry, opts, "convo", None)
+        # Chat formatter: multi-line shape with USER label
+        assert "{USER:\nhello world\n}" in result
+
+    def test_task_only_formatter_routes_to_tasks(self):
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(formatter="task-only")
+        entry = _make_logentry(
+            raw_content="",
+            role="task-create",
+            tool_name="TaskCreate",
+            metadata={"task_content": "CREATE: do thing"},
+        )
+        result = format_for_channel(entry, opts, "tasks", None)
+        # Task-only output uses task_content from metadata
+        assert "{CREATE: do thing }" in result
+
+    def test_str_passthrough_for_legacy_callers(self):
+        """Defensive: format_for_channel(str) returns str unchanged."""
+        from cclogger.formatters import format_for_channel
+        result = format_for_channel("[[ts]] {Bash: ls }", None, "shell", None)
+        assert result == "[[ts]] {Bash: ls }"
+
+
+# ============================================================================
+# Section 14: Snippet substitution — rich-format template path
+# ============================================================================
+
+
+class TestSnippetSubstitution:
+    """Pinned: {snippet} placeholder substituted with verbosity-truncated raw_content."""
+
+    def test_snippet_placeholder_substituted(self):
+        from cclogger.formatters.default import DefaultFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={"max_chars": 100})
+        formatter = DefaultFormatter(opts, "shell", None)
+        entry = _make_logentry(
+            raw_content="hello world",
+            role="edit",
+            tool_name="Edit",
+            summary='Edit: "/path:14" ← "{snippet}" (5L)',
+            metadata={"_legacy_complete": "ignored", "datetime_part": "[[ts]] ", "pwd_part": ""},
+        )
+        result = formatter.format(entry)
+        # 100-char budget, 11-char content → no truncation
+        assert '"hello world"' in result
+        assert "{snippet}" not in result  # placeholder fully substituted
+
+    def test_snippet_truncated_to_max_chars(self):
+        from cclogger.formatters.default import DefaultFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={"max_chars": 10})
+        formatter = DefaultFormatter(opts, "shell", None)
+        entry = _make_logentry(
+            raw_content="this is much longer than ten chars",
+            role="edit",
+            tool_name="Edit",
+            summary='Edit: "/path" ← "{snippet}" (1L)',
+            metadata={"datetime_part": "", "pwd_part": ""},
+        )
+        result = formatter.format(entry)
+        # First 10 chars: "this is mu" + "..."
+        assert '"this is mu..."' in result
+
+    def test_snippet_full_when_verbosity_full(self):
+        from cclogger.formatters.default import DefaultFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity="full")
+        formatter = DefaultFormatter(opts, "sesslog", None)
+        entry = _make_logentry(
+            raw_content="this is the entire content with no truncation expected",
+            role="edit",
+            tool_name="Edit",
+            summary='Edit: "/path" ← "{snippet}" (1L)',
+            metadata={"datetime_part": "", "pwd_part": ""},
+        )
+        result = formatter.format(entry)
+        assert '"this is the entire content with no truncation expected"' in result
+
+    def test_template_path_takes_precedence_over_legacy_complete(self):
+        """When summary has {snippet}, channel verbosity wins over precomputed legacy."""
+        from cclogger.formatters.default import DefaultFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity="full")
+        formatter = DefaultFormatter(opts, "sesslog", None)
+        entry = _make_logentry(
+            raw_content="full content",
+            role="edit",
+            tool_name="Edit",
+            summary='Edit: "/p" ← "{snippet}"',
+            metadata={
+                "_legacy_complete": "[[ts]] {Edit: \"/p\" ← \"truncate...\" }",
+                "datetime_part": "",
+                "pwd_part": "",
+            },
+        )
+        result = formatter.format(entry)
+        # Template path wins; legacy_complete ignored
+        assert "full content" in result
+        assert "truncate..." not in result
+
+    def test_no_template_uses_legacy_complete(self):
+        """When summary has no {snippet}, legacy_complete is used (Bash etc.)."""
+        from cclogger.formatters.default import DefaultFormatter
+        formatter = DefaultFormatter(None, "shell", None)
+        entry = _make_logentry(
+            raw_content="ls -la",
+            role="bash",
+            tool_name="Bash",
+            summary=None,  # no template
+            metadata={"_legacy_complete": "[[ts]] {Bash: ls -la }"},
+        )
+        result = formatter.format(entry)
+        assert result == "[[ts]] {Bash: ls -la }"
+
+
+# ============================================================================
+# Section 15: NewlinePolicy round-trip (ESCAPE vs RENDER)
+# ============================================================================
+
+
+class TestNewlinePolicyRoundTrip:
+    """Pinned: ESCAPE produces literal \\n; RENDER preserves real newlines."""
+
+    def test_escape_policy_escapes_newlines_in_snippet(self):
+        from cclogger.formatters.default import DefaultFormatter
+        from cclogger.models import ChannelOptions, NewlinePolicy
+        opts = ChannelOptions(verbosity="full", newline_policy=NewlinePolicy.ESCAPE)
+        formatter = DefaultFormatter(opts, "shell", None)
+        entry = _make_logentry(
+            raw_content="line1\nline2\nline3",
+            role="edit",
+            tool_name="Edit",
+            summary='Edit: "/p" ← "{snippet}"',
+            metadata={"datetime_part": "", "pwd_part": ""},
+        )
+        result = formatter.format(entry)
+        # ESCAPE: real newlines become literal \n
+        assert "line1\\nline2\\nline3" in result
+        assert "\nline2\n" not in result
+
+    def test_render_policy_via_chat_formatter(self):
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import ChannelOptions, NewlinePolicy
+        opts = ChannelOptions(
+            verbosity="full",
+            formatter="chat",
+            newline_policy=NewlinePolicy.RENDER,
+        )
+        entry = _make_logentry(
+            raw_content="line1\nline2\nline3",
+            role="user",
+            tool_name="UserPromptSubmit",
+        )
+        result = format_for_channel(entry, opts, "convo", None)
+        # RENDER: real newlines preserved
+        assert "line1\nline2\nline3" in result
+
+    def test_chat_formatter_with_escape_falls_back_to_single_line(self):
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import ChannelOptions, NewlinePolicy
+        opts = ChannelOptions(
+            verbosity="full",
+            formatter="chat",
+            newline_policy=NewlinePolicy.ESCAPE,
+        )
+        entry = _make_logentry(
+            raw_content="line1\nline2",
+            role="user",
+            tool_name="UserPromptSubmit",
+        )
+        result = format_for_channel(entry, opts, "convo", None)
+        # ESCAPE collapses to single line
+        assert "line1\\nline2" in result
+
+
+# ============================================================================
+# Section 16: Per-channel defaults (the v0.3.7 shipped configuration)
+# ============================================================================
+
+
+class TestPerChannelDefaults:
+    """Pinned: shipped channel defaults bundle the right ChannelOptions."""
+
+    def test_convo_channel_uses_chat_formatter(self):
+        from cclogger.models import Config, NewlinePolicy
+        cfg = Config()
+        convo = cfg.routing.channels["convo"]
+        assert convo.options.formatter == "chat"
+        assert convo.options.newline_policy == NewlinePolicy.RENDER
+        assert convo.options.verbosity == "full"
+
+    def test_tasks_channel_uses_task_only_formatter(self):
+        from cclogger.models import Config
+        cfg = Config()
+        tasks = cfg.routing.channels["tasks"]
+        assert tasks.options.formatter == "task-only"
+
+    def test_sesslog_channel_uses_full_verbosity_with_io_overrides(self):
+        """sesslog defaults to per-role dict: full for most roles, truncated for
+        write/edit/multi-edit/notebook-edit (file-I/O entries dominate the
+        kitchen-sink channel otherwise; full content goes to .fileio_*)."""
+        from cclogger.models import Config
+        cfg = Config()
+        sesslog = cfg.routing.channels["sesslog"]
+        v = sesslog.options.verbosity
+        assert isinstance(v, dict)
+        assert v["_default"] == "full"
+        assert v["write"] == {"max_chars": 20}
+        assert v["edit"] == {"max_chars": 20}
+        assert v["multi-edit"] == {"max_chars": 20}
+        assert v["notebook-edit"] == {"max_chars": 20}
+
+    def test_shell_channel_uses_100_char_budget(self):
+        from cclogger.models import Config
+        cfg = Config()
+        shell = cfg.routing.channels["shell"]
+        assert shell.options.verbosity == {"max_chars": 100}
+
+    def test_tools_channel_uses_100_char_budget(self):
+        from cclogger.models import Config
+        cfg = Config()
+        tools = cfg.routing.channels["tools"]
+        assert tools.options.verbosity == {"max_chars": 100}
+
+    def test_unknowns_channel_uses_100_char_budget(self):
+        from cclogger.models import Config
+        cfg = Config()
+        unknowns = cfg.routing.channels["unknowns"]
+        assert unknowns.options.verbosity == {"max_chars": 100}
+
+
+# ============================================================================
+# Section 17: Hardcoded-removal regression (AST scan)
+# ============================================================================
+
+
+class TestHardcodedSitesRemoved:
+    """Pinned: the four v0.3.6 hardcoded truncation/dispatch sites are gone."""
+
+    def test_no_truncate_preview_in_conversation_module(self):
+        """conversation.py must not call truncate_preview anymore (Step 6)."""
+        import ast
+        from pathlib import Path
+        src = Path("hooks/scripts/cclogger/conversation.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "truncate_preview":
+                    pytest.fail(
+                        f"truncate_preview() found in conversation.py at line {node.lineno} — "
+                        f"Phase 2+3 Step 6 should have removed it"
+                    )
+
+    def test_log_entry_signature_no_task_content_param(self):
+        """log_entry() signature must not have the v0.3.6 task_content parameter
+        (Step 5 stuffed task_content into LogEntry.metadata instead, eliminating
+        the special-case argument and the per-channel dispatch hardcode it served).
+        """
+        import inspect
+        sig = inspect.signature(_mod.SessionLogger.log_entry)
+        assert "task_content" not in sig.parameters, (
+            "task_content parameter should have been removed from log_entry() in Step 5; "
+            "task data now lives in LogEntry.metadata['task_content'] and TaskOnlyFormatter reads it"
+        )
+
+    def test_log_entry_no_dispatch_branching_on_channel_name(self):
+        """log_entry() body must not branch on `channel_name == "tasks"` for
+        dispatch (Step 5 replaced with formatter dispatch). The filename-
+        generation hardcode in _get_channel_path is a separate concern and
+        is allowed to remain — Phase 6 polish may revisit it.
+        """
+        import ast
+        import inspect
+        import textwrap
+
+        src = textwrap.dedent(inspect.getsource(_mod.SessionLogger.log_entry))
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare):
+                if (
+                    isinstance(node.left, ast.Name)
+                    and node.left.id == "channel_name"
+                    and len(node.comparators) == 1
+                    and isinstance(node.comparators[0], ast.Constant)
+                    and node.comparators[0].value == "tasks"
+                ):
+                    pytest.fail(
+                        f"log_entry() branches on channel_name == 'tasks' at relative line "
+                        f"{node.lineno} — Step 5 should have replaced this with formatter dispatch"
+                    )
+
+    def test_log_entry_no_task_content_parameter(self):
+        """log_entry() signature must not have task_content arg (Step 5 removed it)."""
+        import inspect
+        sig = inspect.signature(_mod.SessionLogger.log_entry)
+        assert "task_content" not in sig.parameters, (
+            "task_content parameter should have been removed from log_entry() in Step 5"
+        )
+
+
+# ============================================================================
+# Section 18: CommandContent dataclass (Phase 2+3 Step 7)
+# ============================================================================
+
+
+class TestCommandContent:
+    """Pinned: CommandContent dataclass carries raw_content + legacy_string + summary_template."""
+
+    def test_command_content_exists(self):
+        from cclogger.models import CommandContent
+        cc = CommandContent(raw_content="x", legacy_string="x", summary_template=None)
+        assert cc.raw_content == "x"
+        assert cc.legacy_string == "x"
+        assert cc.summary_template is None
+
+    def test_get_command_content_structured_returns_dataclass(self):
+        from cclogger.formatters import get_command_content_structured
+        from cclogger.models import CommandContent, ToolInfo
+        ti = ToolInfo(
+            name="Bash",
+            input={"command": "ls -la"},
+            description="",
+            session_id="abc",
+            transcript_path="",
+            raw_json={},
+        )
+        result = get_command_content_structured(ti, None)
+        assert isinstance(result, CommandContent)
+        assert result.raw_content == "ls -la"
+        assert result.legacy_string == "ls -la"
+        assert result.summary_template is None  # Bash is non-rich
+
+    def test_edit_handler_returns_summary_template(self):
+        from cclogger.formatters import get_command_content_structured
+        from cclogger.models import ToolInfo
+        ti = ToolInfo(
+            name="Edit",
+            input={
+                "file_path": "/tmp/x.py",
+                "old_string": "old",
+                "new_string": "new content",
+            },
+            description="",
+            session_id="abc",
+            transcript_path="",
+            raw_json={},
+        )
+        result = get_command_content_structured(ti, None)
+        # Edit is a rich-format handler → has summary_template with {snippet}
+        assert result.summary_template is not None
+        assert "{snippet}" in result.summary_template
+        # raw_content is the new_string for {snippet} substitution
+        assert result.raw_content == "new content"
+
+    def test_write_handler_returns_summary_template(self):
+        from cclogger.formatters import get_command_content_structured
+        from cclogger.models import ToolInfo
+        ti = ToolInfo(
+            name="Write",
+            input={"file_path": "/tmp/x.txt", "content": "hello world"},
+            description="",
+            session_id="abc",
+            transcript_path="",
+            raw_json={},
+        )
+        result = get_command_content_structured(ti, None)
+        assert result.summary_template is not None
+        assert "{snippet}" in result.summary_template
+        assert result.raw_content == "hello world"
+
+    def test_get_command_content_legacy_wrapper_still_returns_str(self):
+        """Backward compat: get_command_content() still returns just the legacy string."""
+        from cclogger.formatters import get_command_content
+        from cclogger.models import ToolInfo
+        ti = ToolInfo(
+            name="Bash",
+            input={"command": "echo hi"},
+            description="",
+            session_id="abc",
+            transcript_path="",
+            raw_json={},
+        )
+        result = get_command_content(ti, None)
+        assert isinstance(result, str)
+        assert result == "echo hi"
+
+
+# ============================================================================
+# Section 19: ROLE_LABELS resolution + ??:<role> fallback for unknown roles
+# ============================================================================
+
+
+class TestRoleLabelResolution:
+    """Pinned: known roles use ROLE_LABELS dict; unknown roles get ??: prefix."""
+
+    def test_known_role_resolves_to_label(self):
+        from cclogger.formatters.base import BaseFormatter
+        formatter = BaseFormatter(None, "test", None)
+        assert formatter._resolve_role_label("user") == "USER"
+        assert formatter._resolve_role_label("bash") == "Bash"
+        assert formatter._resolve_role_label("edit") == "Edit"
+
+    def test_unknown_role_gets_question_mark_prefix(self, tmp_path, monkeypatch):
+        # Isolate sentinel dir to tmp_path so test doesn't pollute ~/.claude/
+        monkeypatch.setattr(
+            "cclogger.debug.UNKNOWN_ROLE_WARN_DIR",
+            tmp_path / ".unknown_role_warnings",
+        )
+        from cclogger.formatters.base import BaseFormatter
+        formatter = BaseFormatter(None, "test", None)
+        result = formatter._resolve_role_label("totally-made-up-role-xyz")
+        assert result.startswith("??:")
+        assert "totally-made-up-role-xyz" in result
+
+    def test_unknown_role_warning_throttled_via_sentinel(self, tmp_path, monkeypatch):
+        sentinel_dir = tmp_path / ".unknown_role_warnings"
+        monkeypatch.setattr("cclogger.debug.UNKNOWN_ROLE_WARN_DIR", sentinel_dir)
+        from cclogger.debug import _warn_unknown_role_once
+        # First call creates sentinel + would log warning
+        _warn_unknown_role_once("brand-new-role")
+        sentinels_after_first = list(sentinel_dir.glob("*.warned"))
+        assert len(sentinels_after_first) == 1
+        # Second call hits FileExistsError; no new sentinel
+        _warn_unknown_role_once("brand-new-role")
+        sentinels_after_second = list(sentinel_dir.glob("*.warned"))
+        assert len(sentinels_after_second) == 1
+
+    def test_per_channel_role_label_override(self):
+        from cclogger.formatters.base import BaseFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(role_labels={"bash": "BASH-OVERRIDDEN"})
+        formatter = BaseFormatter(opts, "test", None)
+        assert formatter._resolve_role_label("bash") == "BASH-OVERRIDDEN"
+        # Other roles still use global
+        assert formatter._resolve_role_label("user") == "USER"
+
+    def test_per_channel_label_uses_longest_prefix(self):
+        from cclogger.formatters.base import BaseFormatter
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(role_labels={"agent": "AGT", "agent:senior-engineer": "SR-ENG"})
+        formatter = BaseFormatter(opts, "test", None)
+        assert formatter._resolve_role_label("agent:senior-engineer") == "SR-ENG"
+        assert formatter._resolve_role_label("agent") == "AGT"
+        assert formatter._resolve_role_label("agent:other") == "AGT"
+
+
+# ============================================================================
+# Section 20: Subtype-channel options inheritance
+# ============================================================================
+#
+# Subtype routing (v0.3.3, Github #31) creates dynamic channel names like
+# "shell-powershell" or "tools-github" at log time. These derived channels
+# aren't declared in routing.channels — they're manufactured per-event.
+#
+# Phase 2+3 fixes the gap where derived channels silently fell back to
+# global defaults instead of inheriting the parent channel's ChannelOptions.
+# Without inheritance, enabling subtype_routing.tools = true would write
+# .tools-github_*.log with 20-char snippets (global default) even though
+# the parent .tools_*.log uses 100-char snippets per its bundled options.
+
+
+class TestSubtypeChannelInheritance:
+    """Pinned: subtype-derived channels inherit parent ChannelOptions.
+
+    Standard inheritance pattern: declare-to-override, omit-to-inherit.
+    A derived channel name "<base>-<subtype>" looks up the base channel's
+    options; explicitly declaring the derived channel takes precedence.
+    """
+
+    def _make_logger(self, config):
+        """Build a SessionLogger without going through filesystem reconciliation."""
+        from cclogger.logger import SessionLogger
+        from cclogger.models import SessionContext
+        # Use object.__new__ to skip __init__'s heavy reconciliation work.
+        # We only need _resolve_channel_options to run.
+        logger = object.__new__(SessionLogger)
+        logger.config = config
+        logger.session = SessionContext(
+            shell_type="bash",
+            session_name="test",
+            session_id="00000000-0000-0000-0000-000000000001",
+            username="testuser",
+        )
+        return logger
+
+    def test_subtype_channel_inherits_parent_options(self):
+        from cclogger.models import Config
+        config = Config()
+        logger = self._make_logger(config)
+        # tools channel has max_chars=100; tools-github should inherit
+        opts = logger._resolve_channel_options(None, "tools-github")
+        assert opts is not None
+        assert opts.verbosity == {"max_chars": 100}
+
+    def test_subtype_channel_inherits_sesslog_full_verbosity(self):
+        from cclogger.models import Config
+        config = Config()
+        logger = self._make_logger(config)
+        # sesslog uses per-role dict with _default fallback; sesslog-github inherits
+        opts = logger._resolve_channel_options(None, "sesslog-github")
+        assert opts is not None
+        assert isinstance(opts.verbosity, dict)
+        assert opts.verbosity["_default"] == "full"
+
+    def test_subtype_channel_inherits_chat_formatter_from_convo(self):
+        from cclogger.models import Config, NewlinePolicy
+        config = Config()
+        logger = self._make_logger(config)
+        # convo uses formatter="chat" + RENDER; convo-help inherits
+        opts = logger._resolve_channel_options(None, "convo-help")
+        assert opts is not None
+        assert opts.formatter == "chat"
+        assert opts.newline_policy == NewlinePolicy.RENDER
+
+    def test_explicit_subtype_channel_takes_precedence_over_inheritance(self):
+        """Declaring a subtype channel explicitly overrides parent inheritance."""
+        from cclogger.models import (
+            ChannelConfig, ChannelOptions, Config, NewlinePolicy,
+        )
+        config = Config()
+        # Explicitly declare shell-powershell with a different verbosity
+        config.routing.channels["shell-powershell"] = ChannelConfig(
+            file_prefix=".shell-powershell_",
+            options=ChannelOptions(verbosity={"max_chars": 50}),
+        )
+        logger = self._make_logger(config)
+        explicit_channel = config.routing.channels["shell-powershell"]
+        opts = logger._resolve_channel_options(explicit_channel, "shell-powershell")
+        # The explicit declaration wins (50), not the parent shell's 100
+        assert opts.verbosity == {"max_chars": 50}
+
+    def test_unknown_base_channel_returns_none(self):
+        """If neither the derived channel nor its base exists, return None."""
+        from cclogger.models import Config
+        config = Config()
+        logger = self._make_logger(config)
+        # No "nonexistent" channel anywhere
+        opts = logger._resolve_channel_options(None, "nonexistent-subtype")
+        assert opts is None
+
+    def test_non_subtype_unknown_channel_returns_none(self):
+        """Channel name without the `<base>-<subtype>` shape doesn't trigger inheritance."""
+        from cclogger.models import Config
+        config = Config()
+        logger = self._make_logger(config)
+        opts = logger._resolve_channel_options(None, "totally-fake-channel-no-dash-sentinel")
+        # Has dashes -> tries inheritance lookup for "totally" base
+        # which doesn't exist -> returns None
+        assert opts is None
+
+    def test_no_dash_no_inheritance_attempt(self):
+        """Channel name with no dash short-circuits to None when channel is None."""
+        from cclogger.models import Config
+        config = Config()
+        logger = self._make_logger(config)
+        opts = logger._resolve_channel_options(None, "nodashhere")
+        assert opts is None
+
+
+# ============================================================================
+# Section 21: `_default` per-role-dict fallback (Phase 2+3 framework extension)
+# ============================================================================
+#
+# The `_default` reserved keyword lets a per-role verbosity dict express
+# "channel default = X, but override these specific roles." Without it,
+# unmatched roles fall to the global default (20), which prevents
+# expressing "full for everything except Write/Edit at 20 chars."
+
+
+class TestDefaultReservedKeyword:
+    """Pinned: `_default` inside per-role verbosity dict is the channel fallback."""
+
+    def test_default_keyword_is_in_reserved_set(self):
+        from cclogger.models import (
+            HINT_VERBOSITY_KEYS, PER_ROLE_RESERVED_KEYS, RESERVED_VERBOSITY_KEYS,
+        )
+        # _default is a per-role reserved key, NOT a hint key
+        assert "_default" in PER_ROLE_RESERVED_KEYS
+        assert "_default" not in HINT_VERBOSITY_KEYS
+        assert "_default" in RESERVED_VERBOSITY_KEYS
+
+    def test_default_fallback_for_unmatched_role(self):
+        """_default applies when no role-specific override matches."""
+        from cclogger.formatters import _resolve_verbosity
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={
+            "_default": "full",
+            "write": {"max_chars": 20},
+        })
+        # "user" doesn't match write; _default = "full" → 0
+        assert _resolve_verbosity(opts, "user", "UserPromptSubmit", 20) == 0
+
+    def test_specific_role_override_beats_default(self):
+        """Specific role match wins over _default fallback."""
+        from cclogger.formatters import _resolve_verbosity
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={
+            "_default": "full",
+            "write": {"max_chars": 20},
+        })
+        # "write" matches; gets 20-char budget, not full
+        assert _resolve_verbosity(opts, "write", "Write", 20) == 20
+
+    def test_no_match_no_default_falls_to_global(self):
+        """Without _default, unmatched roles fall to global default (unchanged)."""
+        from cclogger.formatters import _resolve_verbosity
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={"write": {"max_chars": 100}})
+        # "user" doesn't match, no _default → global default (50)
+        assert _resolve_verbosity(opts, "user", "UserPromptSubmit", 50) == 50
+
+    def test_default_recursive_value(self):
+        """_default's value can be any verbosity shape (string, hint dict, int)."""
+        from cclogger.formatters import _resolve_verbosity
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(verbosity={
+            "_default": {"max_chars": 50},
+            "write": "full",
+        })
+        # Unmatched role gets _default's value (50)
+        assert _resolve_verbosity(opts, "user", "UserPromptSubmit", 20) == 50
+        # write gets full (0)
+        assert _resolve_verbosity(opts, "write", "Write", 20) == 0
+
+    def test_default_not_treated_as_hint_key(self):
+        """A dict with only _default is a per-role dict (with fallback), not a hint dict."""
+        from cclogger.formatters.legacy import _is_hint_dict
+        # _default alone → per-role dict (would fall to default for any role)
+        assert _is_hint_dict({"_default": "full"}) is False
+        # max_chars alone → hint dict (applies uniformly)
+        assert _is_hint_dict({"max_chars": 50}) is True
+        # _default + max_chars → per-role dict (because _default isn't a hint key)
+        assert _is_hint_dict({"_default": "full", "max_chars": 50}) is False
+
+    def test_default_works_for_newline_policy_too(self):
+        """The _default extension also applies to newline_policy resolution."""
+        from cclogger.formatters import _resolve_newline_policy
+        from cclogger.models import ChannelOptions, NewlinePolicy
+        opts = ChannelOptions(newline_policy={
+            "_default": "render",
+            "write": "escape",
+        })
+        # Unmatched role gets _default
+        assert _resolve_newline_policy(opts, "user", "UserPromptSubmit") == NewlinePolicy.RENDER
+        # write override wins
+        assert _resolve_newline_policy(opts, "write", "Write") == NewlinePolicy.ESCAPE
+
+
+# ============================================================================
+# Section 22: `.fileio_*` channel — opt-in full file-I/O capture
+# ============================================================================
+
+
+class TestFileioChannel:
+    """Pinned: .fileio_* channel exists, disabled by default, captures full content."""
+
+    def test_fileio_channel_in_defaults(self):
+        from cclogger.models import Config
+        cfg = Config()
+        assert "fileio" in cfg.routing.channels
+
+    def test_fileio_channel_disabled_by_default(self):
+        """fileio is opt-in: users must enable it before file content is captured."""
+        from cclogger.models import Config
+        cfg = Config()
+        assert cfg.routing.channels["fileio"].enabled is False
+
+    def test_fileio_channel_uses_full_verbosity_and_render(self):
+        from cclogger.models import Config, NewlinePolicy
+        cfg = Config()
+        opts = cfg.routing.channels["fileio"].options
+        assert opts.verbosity == "full"
+        assert opts.newline_policy == NewlinePolicy.RENDER
+
+    def test_io_category_routes_to_fileio(self):
+        """The io category route includes fileio so file-I/O ops capture there when enabled."""
+        from cclogger.models import Config
+        cfg = Config()
+        assert "fileio" in cfg.routing.category_routes["io"]
+
+    def test_read_now_in_io_category(self):
+        """Read moved from system to io so Read entries also route to fileio."""
+        from cclogger.categorize import categorize_tool
+        assert categorize_tool("Read") == "io"
+
+    def test_write_edit_still_in_io_category(self):
+        """Write/Edit/MultiEdit/NotebookEdit still in io (joined by Read)."""
+        from cclogger.categorize import categorize_tool
+        assert categorize_tool("Write") == "io"
+        assert categorize_tool("Edit") == "io"
+        assert categorize_tool("MultiEdit") == "io"
+        assert categorize_tool("NotebookEdit") == "io"

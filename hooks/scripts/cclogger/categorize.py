@@ -48,9 +48,11 @@ TOOL_CATEGORIES: dict[str, str] = {
     "Grep": "bash",   # `grep -r pattern` equivalent (was system pre-v0.3.1)
     "LS": "bash",     # `ls -la` equivalent (was system pre-v0.3.1)
     "Glob": "bash",   # `find . -name '*.py'` equivalent (was system pre-v0.3.1)
-    # File system queries (structured input, not shell-equivalent)
-    "Read": "system",
-    # File I/O
+    # File I/O. Phase 2+3: Read moved from "system" to "io" so Read entries
+    # also route to the opt-in `.fileio_*` channel along with mutating
+    # operations. Semantically all five are file-I/O operations. "system"
+    # now contains plan modes only (which have no content to capture).
+    "Read": "io",
     "Write": "io",
     "Edit": "io",
     "MultiEdit": "io",

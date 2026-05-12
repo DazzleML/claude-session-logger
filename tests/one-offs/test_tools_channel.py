@@ -30,9 +30,12 @@ class TestToolsChannelDefaults:
         assert channels["tools"].enabled is True
 
     def test_all_default_channels_present(self):
-        # Updated for v0.3.5+ (#33-#35): adds `convo` channel
+        # v0.3.5+ (#33-#35): convo channel added
+        # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
         channels = _default_channels()
-        assert set(channels.keys()) == {"shell", "sesslog", "tasks", "unknowns", "tools", "convo"}
+        assert set(channels.keys()) == {
+            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio",
+        }
 
     def test_tools_channel_uses_consistent_prefix_pattern(self):
         # All channels follow the .{name}_ pattern

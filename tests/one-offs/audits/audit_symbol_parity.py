@@ -211,8 +211,10 @@ def load_new_tree() -> ModuleSymbols:
         union.classes.update(syms.classes)
         union.constants.update(syms.constants)
 
-    # cclogger/*.py (excluding __init__.py to avoid double-counting re-exports)
-    for module_path in sorted(CCLOGGER_DIR.glob("*.py")):
+    # cclogger/**/*.py recursively (excluding __init__.py files to avoid
+    # double-counting re-exports). rglob covers cclogger/formatters/*.py
+    # which Phase 2+3 introduced as a subpackage.
+    for module_path in sorted(CCLOGGER_DIR.rglob("*.py")):
         if module_path.name == "__init__.py":
             continue
         syms = extract_symbols(module_path.read_text(encoding="utf-8"))

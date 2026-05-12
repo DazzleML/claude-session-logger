@@ -16,9 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from cclogger.debug import debug_log
-from cclogger.formatters import format_datetime, truncate_preview
 from cclogger.logger import SessionLogger
-from cclogger.models import Config, SessionContext
+from cclogger.models import Config, LogEntry, SessionContext
 
 
 # ============================================================================
@@ -165,10 +164,17 @@ def handle_conversation_event(
         )
         if not prompt:
             return
-        preview = truncate_preview(prompt, max_len=200, config=config)
-        # Format: {USER: "preview..." }
-        datetime_part = format_datetime(config.datetime_mode, event_time)
-        entry = f'{datetime_part}{{USER: "{preview}" }}'
+        # Phase 2+3 Step 6: emit LogEntry with raw_content; per-channel
+        # formatter dispatch handles truncation. The v0.3.6 hardcoded
+        # `truncate_preview(prompt, max_len=200)` is gone — convo channel
+        # default is verbosity="full" + formatter="chat" + RENDER newlines;
+        # other channels (sesslog) format per their own ChannelOptions.
+        entry = LogEntry(
+            raw_content=prompt,
+            role="user",
+            tool_name="UserPromptSubmit",
+            timestamp=event_time,
+        )
         logger.log_entry(
             entry,
             tool_name="UserPromptSubmit",
@@ -188,11 +194,14 @@ def handle_conversation_event(
         if not texts:
             return
         category = "message_agent" if is_subagent else "message_ai"
-        marker = "AGENT" if is_subagent else "AI"
+        role = "agent" if is_subagent else "ai"
         for text in texts:
-            preview = truncate_preview(text, max_len=200, config=config)
-            datetime_part = format_datetime(config.datetime_mode, event_time)
-            entry = f'{datetime_part}{{{marker}: "{preview}" }}'
+            entry = LogEntry(
+                raw_content=text,
+                role=role,
+                tool_name=hook_event_name,
+                timestamp=event_time,
+            )
             logger.log_entry(
                 entry,
                 tool_name=hook_event_name,
@@ -201,6 +210,6 @@ def handle_conversation_event(
                 raw_json=json_input,
             )
         debug_log(
-            f"Captured {len(texts)} {marker} message(s) to convo channel "
+            f"Captured {len(texts)} {role.upper()} message(s) to convo channel "
             f"({hook_event_name})"
         )
