@@ -185,7 +185,16 @@ class SessionLogger:
         return self.session_dir / filename
 
     def _maybe_write_session_marker(self) -> None:
-        """Write session start or compaction marker if this is first call of a new run."""
+        """Write session-start or compaction marker if this is first call of a new run.
+
+        v0.3.7 Phase 4 (Github #39): broadcasts markers to every enabled channel
+        whose ChannelOptions.suppress_markers is False. Run/compaction numbers
+        are counted from the unified sesslog path (authoritative source), so
+        subtype-derived channel proliferation doesn't affect run counts.
+        Subtype-derived channels (`.bash-powershell_*`, etc.) deliberately
+        receive no markers — they materialize lazily on first write and may
+        not exist at marker time; keeping them clean is the documented policy.
+        """
         if not is_new_session_run(self.session.session_id):
             return  # Already wrote marker for this run
 
@@ -207,14 +216,38 @@ class SessionLogger:
             # Run number only increments for true session starts
             marker_number = get_run_number(self.session.session_id, self.unified_log_path)
 
-        # Write markers to shell and sesslog (not tasks)
-        write_session_marker(self.shell_log_path, marker_number, self.event_time, self.effective_name, source)
-        write_session_marker(self.unified_log_path, marker_number, self.event_time, self.effective_name, source)
+        # Broadcast to all enabled channels that don't suppress markers
+        target_paths = self._collect_marker_target_paths()
+        for path in target_paths:
+            write_session_marker(path, marker_number, self.event_time, self.effective_name, source)
 
         # Mark session as started
         mark_session_started(self.session.session_id)
 
-        debug_log(f"Wrote {'compaction' if source == 'compact' else 'session'} marker: #{marker_number}")
+        debug_log(
+            f"Wrote {'compaction' if source == 'compact' else 'session'} marker: "
+            f"#{marker_number} to {len(target_paths)} channel(s)"
+        )
+
+    def _collect_marker_target_paths(self) -> list[Path]:
+        """Resolve marker target paths for all enabled, non-suppressed channels.
+
+        Only iterates top-level declared channels (`routing.channels`). Subtype
+        derivatives like `.bash-powershell_*` are excluded by design — they
+        appear lazily on first matching tool call, and we keep them clean.
+        Unresolvable channels (path-resolution failure) are silently skipped.
+        """
+        paths: list[Path] = []
+        for channel_name, channel in self.config.routing.channels.items():
+            if not channel.enabled:
+                continue
+            if channel.options.suppress_markers:
+                continue
+            try:
+                paths.append(self._get_channel_path(channel_name))
+            except ValueError:
+                continue  # Unresolvable channel — skip rather than crash
+        return paths
 
     def _expand_with_subtype_channels(
         self,
