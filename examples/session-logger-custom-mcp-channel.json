@@ -1,0 +1,25 @@
+{
+  "$schema": "../hooks/schemas/session-logger.schema.json",
+  "_comment": "CUSTOM MCP CHANNEL example: adds a dedicated .mcp_*.log file for all MCP traffic. MCP tools (mcp__<server>__<tool>) already route through the built-in 'mcp' category; this example captures that traffic to its own channel so it can be read in isolation. Enable subtype_routing.mcp to split per-server into .mcp-github_*.log, .mcp-todoai_*.log, etc.",
+
+  "routing": {
+    "channels": {
+      "mcp_log": {
+        "file_prefix": ".mcp_",
+        "enabled": true,
+        "options": {
+          "verbosity": {
+            "_default": "full",
+            "mcp": {"max_chars": 400}
+          }
+        }
+      }
+    },
+    "category_routes": {
+      "mcp": ["sesslog", "mcp_log"]
+    },
+    "subtype_routing": {
+      "mcp": true
+    }
+  }
+}

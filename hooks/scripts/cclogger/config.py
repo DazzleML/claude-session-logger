@@ -15,87 +15,9 @@ from typing import Any
 
 from cclogger.debug import debug_log
 from cclogger.models import (
-    RESERVED_VERBOSITY_KEYS,
-    ChannelConfig,
-    ChannelOptions,
     Config,
+    parse_bool,
 )
-
-
-# ============================================================================
-# Channel-options validation helpers (v0.3.7 Phase 1)
-# ============================================================================
-
-
-def _validate_verbosity_dict(verbosity: dict, channel_name: str) -> dict:
-    """Inspect a verbosity dict; classify + reject hint/role-key ambiguity.
-
-    Returns the dict (possibly with bogus hint-keys filtered out + debug_log warnings).
-
-    Phase 2+3 introduces `_default` as a per-role-dict fallback key. Unlike
-    `max_chars`/`max_lines` (hint keys that describe a single value), `_default`
-    is meant to coexist with role keys in a per-role map. Validation handles
-    both: hint keys (max_chars, max_lines) cannot coexist with role keys;
-    `_default` can.
-
-    Behavior:
-      - Pure hint dict ({"max_chars": N})                  → returned as-is
-      - Pure per-role map ({"agent:user": "preview"})      → returned as-is
-      - Per-role map with _default ({"_default": "full",
-        "write": {"max_chars": 20}})                       → returned as-is (preferred shape)
-      - Mixed hint+role ({"max_chars": 50, "user": "full"}) → hint keys logged + dropped;
-                                                              remaining keys returned as per-role map
-    """
-    from cclogger.models import HINT_VERBOSITY_KEYS
-
-    if not isinstance(verbosity, dict) or not verbosity:
-        return verbosity
-    hint_in_dict = {k for k in verbosity if k in HINT_VERBOSITY_KEYS}
-    # role-or-_default keys: everything not a hint key
-    non_hint = {k for k in verbosity if k not in HINT_VERBOSITY_KEYS}
-    # Pure hint dict (all keys are hint keys) → keep
-    if hint_in_dict and not non_hint:
-        return verbosity
-    # Pure per-role map (possibly including _default; no hint keys) → keep
-    if non_hint and not hint_in_dict:
-        return verbosity
-    # Mixed hint + role → ambiguous. Drop the hint keys and log.
-    debug_log(
-        f"channel '{channel_name}': verbosity dict mixes hint keys "
-        f"({sorted(hint_in_dict)}) with role/_default keys ({sorted(non_hint)}). "
-        f"Hint keys (max_chars/max_lines) cannot coexist with role keys — "
-        f"dropping them. Use a pure hint dict OR a per-role map (with optional "
-        f"_default fallback)."
-    )
-    return {k: v for k, v in verbosity.items() if k not in HINT_VERBOSITY_KEYS}
-
-
-def _build_channel_options(opts_data: Any, channel_name: str) -> ChannelOptions:
-    """Construct a ChannelOptions from a JSON dict (or None)."""
-    if not isinstance(opts_data, dict):
-        return ChannelOptions()
-    kwargs: dict[str, Any] = {}
-    if "verbosity" in opts_data:
-        v = opts_data["verbosity"]
-        if isinstance(v, dict):
-            v = _validate_verbosity_dict(v, channel_name)
-        kwargs["verbosity"] = v
-    if "formatter" in opts_data and isinstance(opts_data["formatter"], str):
-        kwargs["formatter"] = opts_data["formatter"]
-    if "newline_policy" in opts_data:
-        # Stored as-is (string or dict); resolved at format time via _coerce_newline_policy.
-        # Per-role dicts also validated for reserved-key collisions.
-        np = opts_data["newline_policy"]
-        if isinstance(np, dict):
-            np = _validate_verbosity_dict(np, channel_name)
-        kwargs["newline_policy"] = np
-    if "role_labels" in opts_data and isinstance(opts_data["role_labels"], dict):
-        kwargs["role_labels"] = {
-            str(k): str(v) for k, v in opts_data["role_labels"].items()
-        }
-    if "suppress_markers" in opts_data:
-        kwargs["suppress_markers"] = bool(opts_data["suppress_markers"])
-    return ChannelOptions(**kwargs)
 
 
 # ============================================================================
@@ -123,17 +45,6 @@ def merge_configs(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
         else:
             result[key] = value
     return result
-
-
-def parse_bool(value: Any, default: bool = False) -> bool:
-    """Parse a value as boolean."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.lower() in ("true", "1", "yes")
-    if isinstance(value, int):
-        return value != 0
-    return default
 
 
 def load_configuration(session_context: str) -> Config:
@@ -344,21 +255,17 @@ class ConfigLoader:
             routing["channels"] = {}
 
         # channels/*.json -- one file per channel
+        # v0.3.7 #45 fix: pass channel data through verbatim. The
+        # apply_override protocol on ChannelConfig handles existing-channel
+        # partial overrides (no file_prefix needed) and new-channel
+        # declarations (file_prefix required) at apply time.
         channels_dir = subdir / "channels"
         if channels_dir.is_dir():
             for channel_file in sorted(channels_dir.glob("*.json")):
                 channel_name = channel_file.stem
                 channel_data = load_config_file(channel_file)
-                if isinstance(channel_data, dict) and "file_prefix" in channel_data:
-                    channel_dict = {
-                        "file_prefix": channel_data["file_prefix"],
-                        "enabled": channel_data.get("enabled", True),
-                    }
-                    # v0.3.7: pass options through verbatim; _apply_new_config
-                    # constructs the ChannelOptions instance with validation.
-                    if "options" in channel_data:
-                        channel_dict["options"] = channel_data["options"]
-                    routing["channels"][channel_name] = channel_dict
+                if isinstance(channel_data, dict):
+                    routing["channels"][channel_name] = channel_data
 
         # overrides.json -- category_routes + tool_overrides
         overrides_path = subdir / "overrides.json"
@@ -374,116 +281,12 @@ class ConfigLoader:
 
     @classmethod
     def _apply_new_config(cls, config: Config, data: dict[str, Any]) -> None:
-        """Apply new config format settings."""
-        # Performance settings
-        perf = data.get("performance", {})
-        if isinstance(perf, dict):
-            if "max_file_size_for_line_search" in perf:
-                try:
-                    config.performance.max_file_size_for_line_search = int(
-                        perf["max_file_size_for_line_search"]
-                    )
-                except (ValueError, TypeError):
-                    pass
-            if "content_preview_length" in perf:
-                try:
-                    val = int(perf["content_preview_length"])
-                    config.performance.content_preview_length = max(0, min(200, val))
-                except (ValueError, TypeError):
-                    pass
-            if "task_description_length" in perf:
-                try:
-                    val = int(perf["task_description_length"])
-                    config.performance.task_description_length = max(0, val)
-                except (ValueError, TypeError):
-                    pass
-            if "skill_args_length" in perf:
-                try:
-                    val = int(perf["skill_args_length"])
-                    config.performance.skill_args_length = max(0, val)
-                except (ValueError, TypeError):
-                    pass
+        """Apply new-config-format dict to an existing Config in place.
 
-        # Display settings (override legacy)
-        display = data.get("display", {})
-        if isinstance(display, dict):
-            if "verbosity" in display:
-                try:
-                    v = int(display["verbosity"])
-                    if 0 <= v <= 4:
-                        config.verbosity = v
-                except (ValueError, TypeError):
-                    pass
-            if "datetime" in display:
-                dt = display["datetime"]
-                if dt in ("full", "date", "none"):
-                    config.datetime_mode = dt
-            if "pwd" in display:
-                config.pwd_enabled = parse_bool(display["pwd"])
-
-        # Routing settings
-        routing = data.get("routing", {})
-        if isinstance(routing, dict):
-            # Channels
-            channels = routing.get("channels", {})
-            if isinstance(channels, dict):
-                for name, channel_data in channels.items():
-                    if isinstance(channel_data, dict) and "file_prefix" in channel_data:
-                        # v0.3.7: build ChannelOptions if `options` present;
-                        # otherwise default ChannelOptions() preserves Phase 0 behavior.
-                        opts = _build_channel_options(
-                            channel_data.get("options"), name
-                        )
-                        config.routing.channels[name] = ChannelConfig(
-                            file_prefix=channel_data["file_prefix"],
-                            enabled=channel_data.get("enabled", True),
-                            options=opts,
-                        )
-
-            # Category routes
-            cat_routes = routing.get("category_routes", {})
-            if isinstance(cat_routes, dict):
-                for category, channels_list in cat_routes.items():
-                    if isinstance(channels_list, list):
-                        config.routing.category_routes[category] = channels_list
-
-            # Tool overrides
-            tool_overrides = routing.get("tool_overrides", {})
-            if isinstance(tool_overrides, dict):
-                for tool_name, channels_list in tool_overrides.items():
-                    if isinstance(channels_list, list):
-                        config.routing.tool_overrides[tool_name] = channels_list
-
-            # Subtype routing (v0.3.3, #31): per-category opt-in for splitting
-            # entries into per-subtype channels. Accepts bool or list of subtypes.
-            subtype_routing = routing.get("subtype_routing", {})
-            if isinstance(subtype_routing, dict):
-                for category, value in subtype_routing.items():
-                    if isinstance(value, (bool, list)):
-                        config.routing.subtype_routing[category] = value
-
-        # Action-only settings (override legacy)
-        action_only = data.get("action_only", {})
-        if isinstance(action_only, dict):
-            categories = action_only.get("categories", {})
-            if isinstance(categories, dict):
-                for cat, val in categories.items():
-                    config.action_only[cat] = parse_bool(val)
-            overrides = action_only.get("overrides", {})
-            if isinstance(overrides, dict):
-                for tool, val in overrides.items():
-                    config.action_only_overrides[tool] = str(val)
-
-        # Failure capture settings (override legacy)
-        failure = data.get("failure_capture", {})
-        if isinstance(failure, dict):
-            if "enabled" in failure:
-                config.failure_capture_enabled = parse_bool(failure["enabled"])
-            if "capture_stderr" in failure:
-                config.failure_capture_stderr = parse_bool(failure["capture_stderr"])
-            if "max_stderr_lines" in failure:
-                try:
-                    val = int(failure["max_stderr_lines"])
-                    config.failure_capture_max_lines = max(1, min(1000, val))
-                except (ValueError, TypeError):
-                    pass
+        v0.3.7 #45 fix: dispatches to the per-dataclass apply_override
+        protocol on Config (which recurses through RoutingConfig →
+        ChannelConfig → ChannelOptions, plus PerformanceConfig). Existing
+        channels get per-field merge that preserves shipped defaults the
+        user didn't redeclare; new channels still require `file_prefix`.
+        """
+        Config.apply_override(config, data)

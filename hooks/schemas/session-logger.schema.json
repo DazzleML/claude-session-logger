@@ -75,13 +75,13 @@
       "properties": {
         "channels": {
           "type": "object",
-          "description": "Define available log channels. Key is channel name.",
+          "description": "Define available log channels. Key is channel name. v0.3.7 #45 fix: when overriding a SHIPPED channel (shell/sesslog/tools/...), `file_prefix` is OPTIONAL — omit it and the shipped value plus all unmentioned options are preserved (per-key merge). When DECLARING a NEW channel, `file_prefix` is REQUIRED (it's the sentinel that distinguishes 'declare new' from 'override existing').",
           "additionalProperties": {
             "type": "object",
             "properties": {
               "file_prefix": {
                 "type": "string",
-                "description": "Filename prefix (e.g., '.shell_', '.mcp_')"
+                "description": "Filename prefix (e.g., '.shell_', '.mcp_'). Required when declaring a new channel; optional when overriding a shipped channel."
               },
               "enabled": {
                 "type": "boolean",
@@ -123,8 +123,7 @@
                   }
                 }
               }
-            },
-            "required": ["file_prefix"]
+            }
           },
           "default": {
             "shell": {"file_prefix": ".shell_", "enabled": true},

@@ -483,8 +483,15 @@ class TestConfigLoaderOptionsField:
         # newline_policy parsed as string OR coerced to enum (implementation choice)
         assert convo.options.newline_policy in ("render", NewlinePolicy.RENDER)
 
-    def test_options_absent_yields_default_options(self, tmp_path, monkeypatch):
-        """If channel JSON doesn't have 'options', ChannelOptions() defaults apply."""
+    def test_options_absent_in_partial_override_preserves_shipped_options(self, tmp_path, monkeypatch):
+        """User overriding an EXISTING channel without an 'options' field
+        must not wipe the channel's shipped ChannelOptions defaults.
+
+        v0.3.7 #45 fix: per-key merge semantics. Re-declaring shell with just
+        {file_prefix, enabled} preserves the shipped verbosity={'max_chars': 100}
+        instead of the v0.3.6 behavior that whole-record-replaced it with
+        ChannelOptions() defaults (verbosity=None).
+        """
         import json
         from cclogger.models import ChannelOptions
         subdir = tmp_path / "session-logger"
@@ -504,8 +511,9 @@ class TestConfigLoaderOptionsField:
         shell = config.routing.channels.get("shell")
         assert shell is not None
         assert isinstance(shell.options, ChannelOptions)
-        assert shell.options.verbosity is None  # default
-        assert shell.options.formatter == "default"  # default
+        # Shipped shell defaults preserved despite no 'options' in user JSON
+        assert shell.options.verbosity == {"max_chars": 100}
+        assert shell.options.formatter == "default"  # also shipped default
 
 
 # ============================================================================

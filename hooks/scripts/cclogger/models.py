@@ -42,6 +42,58 @@ HINT_VERBOSITY_KEYS: set[str] = {"max_chars", "max_lines"}
 PER_ROLE_RESERVED_KEYS: set[str] = {"_default"}
 RESERVED_VERBOSITY_KEYS: set[str] = HINT_VERBOSITY_KEYS | PER_ROLE_RESERVED_KEYS
 
+
+# ============================================================================
+# Coercion helpers shared by the apply_override protocol below
+# ============================================================================
+
+
+def parse_bool(value: Any, default: bool = False) -> bool:
+    """Coerce a JSON value (bool/str/int) to bool. Used across config layers."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    if isinstance(value, int):
+        return value != 0
+    return default
+
+
+def _validate_per_role_dict(value: dict, channel_name: str, field_name: str = "verbosity") -> dict:
+    """Validate a per-role dict (used for both `verbosity` and `newline_policy`).
+
+    Classifies the dict shape and rejects hint/role-key ambiguity. Returns the
+    dict (possibly with bogus hint keys filtered out + debug_log warning).
+
+    `field_name` is used only in the debug_log message so users see which field
+    they misconfigured. Defaults to "verbosity" since that was the original
+    consumer and most config error messages refer to it.
+
+    Behavior:
+      - Pure hint dict ({"max_chars": N})                  → returned as-is
+      - Pure per-role map ({"agent:user": "preview"})      → returned as-is
+      - Per-role map with _default ({"_default": "full",
+        "write": {"max_chars": 20}})                       → returned as-is
+      - Mixed hint+role ({"max_chars": 50, "user": "full"}) → hint keys
+                                                              dropped + logged
+    """
+    if not isinstance(value, dict) or not value:
+        return value
+    hint_in_dict = {k for k in value if k in HINT_VERBOSITY_KEYS}
+    non_hint = {k for k in value if k not in HINT_VERBOSITY_KEYS}
+    if hint_in_dict and not non_hint:
+        return value
+    if non_hint and not hint_in_dict:
+        return value
+    debug_log(
+        f"channel '{channel_name}': {field_name} dict mixes hint keys "
+        f"({sorted(hint_in_dict)}) with role/_default keys ({sorted(non_hint)}). "
+        f"Hint keys (max_chars/max_lines) cannot coexist with role keys — "
+        f"dropping them. Use a pure hint dict OR a per-role map (with optional "
+        f"_default fallback)."
+    )
+    return {k: v for k, v in value.items() if k not in HINT_VERBOSITY_KEYS}
+
 # Closed enum of role identifiers handlers can emit. Roles are hierarchical
 # with `:` separator (e.g., "agent:senior-engineer:user", "bash:powershell").
 # Unknown roles get the `??:<role>` prefix in default formatter output and
@@ -141,6 +193,45 @@ class ChannelOptions:
     role_labels: Optional[dict[str, str]] = None  # per-channel override of global ROLE_LABELS
     suppress_markers: bool = False  # opt out of session-marker broadcast (v0.3.7 #39)
 
+    @classmethod
+    def apply_override(cls, target: "ChannelOptions", override: Any, channel_name: str = "") -> None:
+        """Apply a partial override dict to an existing ChannelOptions in place.
+
+        Per-field merge: keys absent from override preserve current value;
+        keys present override the value (with coercion). Replaces v0.3.6
+        whole-record reconstruction that silently lost shipped defaults
+        (Bug #45).
+        """
+        if not isinstance(override, dict):
+            return
+
+        if "verbosity" in override:
+            v = override["verbosity"]
+            if isinstance(v, dict):
+                target.verbosity = _validate_per_role_dict(v, channel_name, "verbosity")
+            elif v is None or isinstance(v, str):
+                target.verbosity = v
+
+        if "formatter" in override and isinstance(override["formatter"], str):
+            target.formatter = override["formatter"]
+
+        if "newline_policy" in override:
+            v = override["newline_policy"]
+            if isinstance(v, dict):
+                target.newline_policy = _validate_per_role_dict(v, channel_name, "newline_policy")
+            elif v is None or isinstance(v, (str, NewlinePolicy)):
+                target.newline_policy = v
+
+        if "role_labels" in override:
+            v = override["role_labels"]
+            if isinstance(v, dict):
+                target.role_labels = {str(k): str(val) for k, val in v.items()}
+            elif v is None:
+                target.role_labels = None
+
+        if "suppress_markers" in override:
+            target.suppress_markers = parse_bool(override["suppress_markers"])
+
 
 # ============================================================================
 # Data Classes
@@ -228,6 +319,41 @@ class PerformanceConfig:
     task_description_length: int = 0  # 0 = full (no truncation)
     skill_args_length: int = 100  # 0 = name only, 100 = default preview
 
+    @classmethod
+    def apply_override(cls, target: "PerformanceConfig", override: Any) -> None:
+        """Apply partial override dict to existing PerformanceConfig in place."""
+        if not isinstance(override, dict):
+            return
+
+        if "max_file_size_for_line_search" in override:
+            try:
+                target.max_file_size_for_line_search = int(
+                    override["max_file_size_for_line_search"]
+                )
+            except (ValueError, TypeError):
+                pass
+
+        if "content_preview_length" in override:
+            try:
+                val = int(override["content_preview_length"])
+                target.content_preview_length = max(0, min(200, val))
+            except (ValueError, TypeError):
+                pass
+
+        if "task_description_length" in override:
+            try:
+                val = int(override["task_description_length"])
+                target.task_description_length = max(0, val)
+            except (ValueError, TypeError):
+                pass
+
+        if "skill_args_length" in override:
+            try:
+                val = int(override["skill_args_length"])
+                target.skill_args_length = max(0, val)
+            except (ValueError, TypeError):
+                pass
+
 
 @dataclass
 class ChannelConfig:
@@ -240,6 +366,28 @@ class ChannelConfig:
     file_prefix: str
     enabled: bool = True
     options: ChannelOptions = field(default_factory=ChannelOptions)
+
+    @classmethod
+    def apply_override(cls, target: "ChannelConfig", override: Any, channel_name: str = "") -> None:
+        """Apply partial override dict to existing ChannelConfig in place.
+
+        Per-field merge across file_prefix/enabled, recurses into options.
+        """
+        if not isinstance(override, dict):
+            return
+
+        if "file_prefix" in override and isinstance(override["file_prefix"], str):
+            target.file_prefix = override["file_prefix"]
+
+        if "enabled" in override:
+            target.enabled = parse_bool(override["enabled"], default=True)
+
+        if "options" in override:
+            v = override["options"]
+            if isinstance(v, dict):
+                ChannelOptions.apply_override(target.options, v, channel_name)
+            elif v is None:
+                target.options = ChannelOptions()
 
 
 def _default_channels() -> dict[str, ChannelConfig]:
@@ -395,6 +543,56 @@ class RoutingConfig:
     # Categories not present in this dict default to False.
     subtype_routing: dict[str, "bool | list[str]"] = field(default_factory=dict)
 
+    @classmethod
+    def apply_override(cls, target: "RoutingConfig", override: Any) -> None:
+        """Apply partial override dict to existing RoutingConfig in place.
+
+        For `channels`: existing entries get per-field merge via
+        ChannelConfig.apply_override (preserves shipped defaults — Bug #45
+        fix). New entries must declare `file_prefix` or are skipped with a
+        debug_log warning. For `category_routes`/`tool_overrides`/
+        `subtype_routing`: per-key replace (lists/bools are atomic values).
+        """
+        if not isinstance(override, dict):
+            return
+
+        channels = override.get("channels")
+        if isinstance(channels, dict):
+            for name, channel_data in channels.items():
+                if not isinstance(channel_data, dict):
+                    continue
+                if name in target.channels:
+                    ChannelConfig.apply_override(target.channels[name], channel_data, name)
+                else:
+                    fp = channel_data.get("file_prefix")
+                    if not isinstance(fp, str):
+                        debug_log(
+                            f"new channel '{name}' missing required 'file_prefix' "
+                            f"string; skipping"
+                        )
+                        continue
+                    new_channel = ChannelConfig(file_prefix=fp)
+                    ChannelConfig.apply_override(new_channel, channel_data, name)
+                    target.channels[name] = new_channel
+
+        cat_routes = override.get("category_routes")
+        if isinstance(cat_routes, dict):
+            for category, channels_list in cat_routes.items():
+                if isinstance(channels_list, list):
+                    target.category_routes[category] = channels_list
+
+        tool_overrides = override.get("tool_overrides")
+        if isinstance(tool_overrides, dict):
+            for tool_name, channels_list in tool_overrides.items():
+                if isinstance(channels_list, list):
+                    target.tool_overrides[tool_name] = channels_list
+
+        subtype_routing = override.get("subtype_routing")
+        if isinstance(subtype_routing, dict):
+            for category, value in subtype_routing.items():
+                if isinstance(value, (bool, list)):
+                    target.subtype_routing[category] = value
+
 
 @dataclass
 class Config:
@@ -434,6 +632,73 @@ class Config:
 
     # NEW: Routing configuration
     routing: RoutingConfig = field(default_factory=RoutingConfig)
+
+    @classmethod
+    def apply_override(cls, target: "Config", override: Any) -> None:
+        """Apply partial override dict to existing Config in place.
+
+        Walks every nested typed structure via its own apply_override.
+        Fields absent from override preserve their existing values — the
+        bug fix that makes shipped channel/option defaults survive partial
+        user overrides (#45).
+        """
+        if not isinstance(override, dict):
+            return
+
+        if "performance" in override:
+            v = override["performance"]
+            if isinstance(v, dict):
+                PerformanceConfig.apply_override(target.performance, v)
+            elif v is None:
+                target.performance = PerformanceConfig()
+
+        # Display settings (top-level fields on Config, nested under "display" in JSON)
+        display = override.get("display")
+        if isinstance(display, dict):
+            if "verbosity" in display:
+                try:
+                    v_int = int(display["verbosity"])
+                    if 0 <= v_int <= 4:
+                        target.verbosity = v_int
+                except (ValueError, TypeError):
+                    pass
+            if "datetime" in display:
+                dt = display["datetime"]
+                if dt in ("full", "date", "none"):
+                    target.datetime_mode = dt
+            if "pwd" in display:
+                target.pwd_enabled = parse_bool(display["pwd"])
+
+        if "routing" in override:
+            v = override["routing"]
+            if isinstance(v, dict):
+                RoutingConfig.apply_override(target.routing, v)
+            elif v is None:
+                target.routing = RoutingConfig()
+
+        action_only = override.get("action_only")
+        if isinstance(action_only, dict):
+            categories = action_only.get("categories")
+            if isinstance(categories, dict):
+                for cat, val in categories.items():
+                    target.action_only[cat] = parse_bool(val)
+            overrides_dict = action_only.get("overrides")
+            if isinstance(overrides_dict, dict):
+                for tool, val in overrides_dict.items():
+                    target.action_only_overrides[tool] = str(val)
+
+        failure = override.get("failure_capture")
+        if isinstance(failure, dict):
+            if "enabled" in failure:
+                target.failure_capture_enabled = parse_bool(failure["enabled"])
+            if "capture_stderr" in failure:
+                target.failure_capture_stderr = parse_bool(failure["capture_stderr"])
+            if "max_stderr_lines" in failure:
+                try:
+                    v_int = int(failure["max_stderr_lines"])
+                    target.failure_capture_max_lines = max(1, min(1000, v_int))
+                except (ValueError, TypeError):
+                    pass
 
 
 @dataclass
