@@ -103,10 +103,11 @@ EVENTS = [
     _tool("TaskCreate", {"subject": "Verify snapshot diff",
                          "description": "Run diff_check.py and confirm byte-identical."}),
 
-    # Task (meta category — agent invocation)
-    _tool("Task", {"description": "Spawn explore agent",
-                   "subagent_type": "Explore",
-                   "prompt": "Find all uses of foo()"}),
+    # Agent (meta category — sub-agent invocation; live tool name in Claude
+    # Code per source canvass 2026-05-12, was misnamed "Task" before #45 fix)
+    _tool("Agent", {"description": "Spawn explore agent",
+                    "subagent_type": "Explore",
+                    "prompt": "Find all uses of foo()"}),
 
     # Skill (skill category)
     _tool("Skill", {"skill": "obsidian", "args": "Capture this note about the snapshot test design."}),

@@ -331,6 +331,18 @@ def _default_channels() -> dict[str, ChannelConfig]:
                 newline_policy=NewlinePolicy.RENDER,
             ),
         ),
+        # Phase 5 (Github #40): dedicated agent-invocation channel. Task tool
+        # invocations land here so "show me everything I asked the
+        # senior-engineer to do" is one channel-tail, not a grep across
+        # sesslog. Enable `routing.subtype_routing.meta = true` to split
+        # into per-agent files like `.agents-senior-engineer_*`,
+        # `.agents-help_*`, etc. via the `_subtype_for_meta` extractor
+        # (subagent_type). Subtype-derived channels inherit these options
+        # by default (declare-to-override, omit-to-inherit).
+        "agents": ChannelConfig(
+            file_prefix=".agents_",
+            options=ChannelOptions(verbosity="full"),
+        ),
     }
 
 
@@ -358,6 +370,13 @@ def _default_category_routes() -> dict[str, list[str]]:
         "message_user": ["sesslog", "convo"],
         "message_ai": ["sesslog", "convo"],
         "message_agent": ["sesslog", "convo"],
+        # Phase 5 (Github #40): the `meta` category contains Task tool only
+        # (sub-agent invocations). Route to sesslog (kitchen sink) AND the
+        # dedicated agents channel. NOT routed to shell or tools -- agent
+        # invocations are agent-specific, not shell history or general AI
+        # activity. Users who want Task in `.tools_*` for investigation
+        # views can override `routing.category_routes.meta` in their config.
+        "meta": ["sesslog", "agents"],
     }
 
 

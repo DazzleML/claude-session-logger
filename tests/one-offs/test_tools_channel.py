@@ -32,9 +32,10 @@ class TestToolsChannelDefaults:
     def test_all_default_channels_present(self):
         # v0.3.5+ (#33-#35): convo channel added
         # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
+        # v0.3.7 Phase 5 (#40): agents channel added for sub-agent invocations
         channels = _default_channels()
         assert set(channels.keys()) == {
-            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio",
+            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio", "agents",
         }
 
     def test_tools_channel_uses_consistent_prefix_pattern(self):

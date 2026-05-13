@@ -63,8 +63,14 @@ TOOL_CATEGORIES: dict[str, str] = {
     "TaskUpdate": "task",
     "TaskList": "task",
     "TaskGet": "task",
-    # Meta/agents
-    "Task": "meta",
+    # Meta/agents. Claude Code's live agent-spawning tool is `Agent` (per
+    # source clone canvass 2026-05-12, see
+    # private/claude/notes/research/2026-05-12__claude-code-event-surface.md).
+    # `Task` is intentionally NOT here -- it's distinct from `Agent` and was
+    # never the agent-spawning tool name in normal emit; the `Task*` family
+    # (TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop) belongs in
+    # the `task` category above, which they already correctly do.
+    "Agent": "meta",
     # Web interaction
     "WebSearch": "search",
     "WebFetch": "search",

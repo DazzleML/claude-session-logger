@@ -29,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from cclogger.categorize import categorize_tool
-from cclogger.config import load_configuration
+from cclogger.config import ConfigLoader
 from cclogger.conversation import handle_conversation_event
 from cclogger.debug import DEBUG_LOG, _warn_unknown_tool_once, debug_log
 from cclogger.failure_detection import detect_and_log_failure
@@ -138,7 +138,13 @@ def main() -> None:
     context_string = session_context.get_filename_context()
 
     # Load configuration
-    config = load_configuration(context_string)
+    # ConfigLoader.load() reads the new-style ~/.claude/plugins/settings/
+    # session-logger.json (or split-config dir) on top of the legacy
+    # claude-history.json. Calling load_configuration() directly here would
+    # silently skip every user-config-driven setting (subtype_routing,
+    # suppress_markers, channel enable/disable overrides, custom channels).
+    # See the Phase 5 commit + Github #46 for the bug history.
+    config = ConfigLoader.load(context_string)
 
     # For non-tool hooks (SessionStart, Stop), we still need to update state
     # and potentially trigger session directory reconciliation

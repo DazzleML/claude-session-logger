@@ -125,9 +125,10 @@ class TestDefaultChannels:
         # v0.3.0 (#28): tools channel added
         # v0.3.5+ (#33-#35): convo channel added
         # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
+        # v0.3.7 Phase 5 (#40): agents channel added for sub-agent invocations
         channels = _default_channels()
         assert set(channels.keys()) == {
-            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio",
+            "shell", "sesslog", "tasks", "unknowns", "tools", "convo", "fileio", "agents",
         }
 
 
