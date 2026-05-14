@@ -31,6 +31,13 @@ import pytest
 _mod = importlib.import_module("cclogger")
 ConfigLoader = _mod.ConfigLoader
 
+from cclogger.config_merge import (
+    apply_override_channel_config,
+    apply_override_channel_options,
+    apply_override_config,
+    apply_override_performance_config,
+    apply_override_routing_config,
+)
 from cclogger.models import (
     ChannelConfig,
     ChannelOptions,
@@ -51,7 +58,7 @@ class TestChannelOptionsApplyOverride:
 
     def test_absent_field_preserves_current_value(self):
         target = ChannelOptions(verbosity="full", formatter="default", suppress_markers=True)
-        ChannelOptions.apply_override(target, {"verbosity": "preview"})
+        apply_override_channel_options(target, {"verbosity": "preview"})
         # verbosity overridden, others preserved
         assert target.verbosity == "preview"
         assert target.formatter == "default"
@@ -66,7 +73,7 @@ class TestChannelOptionsApplyOverride:
             role_labels={"edit": "EDT"},
             suppress_markers=True,
         )
-        ChannelOptions.apply_override(target, {"verbosity": {"max_chars": 50}})
+        apply_override_channel_options(target, {"verbosity": {"max_chars": 50}})
         assert target.verbosity == {"max_chars": 50}
         assert target.formatter == "chat"
         assert target.newline_policy == NewlinePolicy.RENDER
@@ -75,39 +82,39 @@ class TestChannelOptionsApplyOverride:
 
     def test_explicit_none_clears_optional_fields(self):
         target = ChannelOptions(verbosity="full", role_labels={"edit": "EDT"})
-        ChannelOptions.apply_override(target, {"verbosity": None, "role_labels": None})
+        apply_override_channel_options(target, {"verbosity": None, "role_labels": None})
         assert target.verbosity is None
         assert target.role_labels is None
 
     def test_formatter_override(self):
         target = ChannelOptions(formatter="default")
-        ChannelOptions.apply_override(target, {"formatter": "chat"})
+        apply_override_channel_options(target, {"formatter": "chat"})
         assert target.formatter == "chat"
 
     def test_formatter_non_string_ignored(self):
         target = ChannelOptions(formatter="chat")
-        ChannelOptions.apply_override(target, {"formatter": 42})
+        apply_override_channel_options(target, {"formatter": 42})
         assert target.formatter == "chat"  # non-str silently ignored
 
     def test_newline_policy_string_override(self):
         target = ChannelOptions()
-        ChannelOptions.apply_override(target, {"newline_policy": "render"})
+        apply_override_channel_options(target, {"newline_policy": "render"})
         assert target.newline_policy == "render"  # stored verbatim, coerced at format time
 
     def test_suppress_markers_override(self):
         target = ChannelOptions(suppress_markers=False)
-        ChannelOptions.apply_override(target, {"suppress_markers": True})
+        apply_override_channel_options(target, {"suppress_markers": True})
         assert target.suppress_markers is True
 
     def test_role_labels_dict_override(self):
         target = ChannelOptions()
-        ChannelOptions.apply_override(target, {"role_labels": {"edit": "EDT", "write": "WRT"}})
+        apply_override_channel_options(target, {"role_labels": {"edit": "EDT", "write": "WRT"}})
         assert target.role_labels == {"edit": "EDT", "write": "WRT"}
 
     def test_verbosity_dict_validated_for_hint_role_collision(self):
         """Mixed hint+role keys still get the hint keys dropped (validation preserved)."""
         target = ChannelOptions()
-        ChannelOptions.apply_override(
+        apply_override_channel_options(
             target,
             {"verbosity": {"max_chars": 50, "user": "full"}},
             channel_name="test",
@@ -117,15 +124,15 @@ class TestChannelOptionsApplyOverride:
 
     def test_empty_override_is_noop(self):
         target = ChannelOptions(verbosity="full", formatter="chat")
-        ChannelOptions.apply_override(target, {})
+        apply_override_channel_options(target, {})
         assert target.verbosity == "full"
         assert target.formatter == "chat"
 
     def test_non_dict_override_is_noop(self):
         target = ChannelOptions(verbosity="full")
-        ChannelOptions.apply_override(target, "not a dict")
-        ChannelOptions.apply_override(target, None)
-        ChannelOptions.apply_override(target, 42)
+        apply_override_channel_options(target, "not a dict")
+        apply_override_channel_options(target, None)
+        apply_override_channel_options(target, 42)
         assert target.verbosity == "full"
 
 
@@ -144,7 +151,7 @@ class TestChannelConfigApplyOverride:
             enabled=False,
             options=ChannelOptions(verbosity="full", newline_policy=NewlinePolicy.RENDER),
         )
-        ChannelConfig.apply_override(target, {"enabled": True}, "fileio")
+        apply_override_channel_config(target, {"enabled": True}, "fileio")
         assert target.enabled is True
         assert target.file_prefix == ".fileio_"
         # The whole point of the fix:
@@ -157,7 +164,7 @@ class TestChannelConfigApplyOverride:
             file_prefix=".fileio_",
             options=ChannelOptions(verbosity="full", newline_policy=NewlinePolicy.RENDER),
         )
-        ChannelConfig.apply_override(
+        apply_override_channel_config(
             target,
             {"options": {"verbosity": {"max_chars": 200}}},
             "fileio",
@@ -168,7 +175,7 @@ class TestChannelConfigApplyOverride:
 
     def test_file_prefix_override(self):
         target = ChannelConfig(file_prefix=".old_")
-        ChannelConfig.apply_override(target, {"file_prefix": ".new_"})
+        apply_override_channel_config(target, {"file_prefix": ".new_"})
         assert target.file_prefix == ".new_"
 
     def test_options_explicit_none_resets_to_defaults(self):
@@ -176,16 +183,16 @@ class TestChannelConfigApplyOverride:
             file_prefix=".fileio_",
             options=ChannelOptions(verbosity="full", newline_policy=NewlinePolicy.RENDER),
         )
-        ChannelConfig.apply_override(target, {"options": None}, "fileio")
+        apply_override_channel_config(target, {"options": None}, "fileio")
         assert target.options.verbosity is None
         assert target.options.newline_policy is None
         assert target.options.formatter == "default"
 
     def test_enabled_coercion(self):
         target = ChannelConfig(file_prefix=".x_", enabled=True)
-        ChannelConfig.apply_override(target, {"enabled": "false"})
+        apply_override_channel_config(target, {"enabled": "false"})
         assert target.enabled is False
-        ChannelConfig.apply_override(target, {"enabled": "true"})
+        apply_override_channel_config(target, {"enabled": "true"})
         assert target.enabled is True
 
 
@@ -208,7 +215,7 @@ class TestRoutingConfigApplyOverride:
         assert target.channels["fileio"].options.newline_policy == NewlinePolicy.RENDER
 
         # Apply minimal user override (the case that was breaking)
-        RoutingConfig.apply_override(target, {"channels": {"fileio": {"enabled": True}}})
+        apply_override_routing_config(target, {"channels": {"fileio": {"enabled": True}}})
 
         # Enabled flipped, but shipped options PRESERVED
         assert target.channels["fileio"].enabled is True
@@ -220,7 +227,7 @@ class TestRoutingConfigApplyOverride:
         target = RoutingConfig()
         # convo channel exists in defaults
         assert "convo" in target.channels
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"convo": {"options": {"suppress_markers": True}}}},
         )
@@ -231,7 +238,7 @@ class TestRoutingConfigApplyOverride:
     def test_new_channel_requires_file_prefix(self):
         target = RoutingConfig()
         # Missing file_prefix: should be skipped silently
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"my_new_channel": {"enabled": True}}},
         )
@@ -239,7 +246,7 @@ class TestRoutingConfigApplyOverride:
 
     def test_new_channel_with_file_prefix_added(self):
         target = RoutingConfig()
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"mcp_log": {"file_prefix": ".mcp_", "enabled": True}}},
         )
@@ -249,7 +256,7 @@ class TestRoutingConfigApplyOverride:
 
     def test_new_channel_with_options(self):
         target = RoutingConfig()
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {
                 "channels": {
@@ -270,7 +277,7 @@ class TestRoutingConfigApplyOverride:
         assert target.channels["convo"].options.newline_policy == NewlinePolicy.RENDER
         assert target.channels["convo"].options.formatter == "chat"
 
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"convo": {"options": {"suppress_markers": True}}}},
         )
@@ -283,7 +290,7 @@ class TestRoutingConfigApplyOverride:
         target = RoutingConfig()
         # Sanity: shipped meta route
         assert target.category_routes["meta"] == ["sesslog", "agents"]
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"category_routes": {"meta": ["sesslog"]}},
         )
@@ -293,7 +300,7 @@ class TestRoutingConfigApplyOverride:
 
     def test_subtype_routing_per_key_set(self):
         target = RoutingConfig()
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"subtype_routing": {"bash": True, "meta": ["senior-engineer", "help"]}},
         )
@@ -302,7 +309,7 @@ class TestRoutingConfigApplyOverride:
 
     def test_tool_overrides_per_key_replace(self):
         target = RoutingConfig()
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"tool_overrides": {"Grep": ["sesslog"]}},
         )
@@ -319,20 +326,20 @@ class TestPerformanceConfigApplyOverride:
 
     def test_partial_override_preserves_other_fields(self):
         target = PerformanceConfig(content_preview_length=50, skill_args_length=200)
-        PerformanceConfig.apply_override(target, {"content_preview_length": 100})
+        apply_override_performance_config(target, {"content_preview_length": 100})
         assert target.content_preview_length == 100
         assert target.skill_args_length == 200  # preserved
 
     def test_content_preview_length_clamped(self):
         target = PerformanceConfig()
-        PerformanceConfig.apply_override(target, {"content_preview_length": 5000})
+        apply_override_performance_config(target, {"content_preview_length": 5000})
         assert target.content_preview_length == 200  # max
-        PerformanceConfig.apply_override(target, {"content_preview_length": -10})
+        apply_override_performance_config(target, {"content_preview_length": -10})
         assert target.content_preview_length == 0  # min
 
     def test_invalid_int_silently_ignored(self):
         target = PerformanceConfig(content_preview_length=42)
-        PerformanceConfig.apply_override(target, {"content_preview_length": "not a number"})
+        apply_override_performance_config(target, {"content_preview_length": "not a number"})
         assert target.content_preview_length == 42  # unchanged
 
 
@@ -347,7 +354,7 @@ class TestConfigApplyOverride:
     def test_partial_routing_preserves_unmentioned_routing_fields(self):
         target = Config()
         # Apply only a channels override
-        Config.apply_override(
+        apply_override_config(
             target,
             {"routing": {"channels": {"convo": {"enabled": False}}}},
         )
@@ -360,7 +367,7 @@ class TestConfigApplyOverride:
     def test_combined_override_subtype_and_channel_options(self):
         """Realistic Section L sweep: combine subtype_routing + channel options."""
         target = Config()
-        Config.apply_override(
+        apply_override_config(
             target,
             {
                 "routing": {
@@ -384,15 +391,15 @@ class TestConfigApplyOverride:
         target1 = Config()
         target2 = Config()
         override = {"routing": {"channels": {"fileio": {"enabled": True}}}}
-        Config.apply_override(target1, override)
-        Config.apply_override(target2, override)
-        Config.apply_override(target2, override)  # second time
+        apply_override_config(target1, override)
+        apply_override_config(target2, override)
+        apply_override_config(target2, override)  # second time
         assert target1.routing.channels["fileio"].enabled == target2.routing.channels["fileio"].enabled
         assert target1.routing.channels["fileio"].options.verbosity == target2.routing.channels["fileio"].options.verbosity
 
     def test_action_only_per_key(self):
         target = Config()
-        Config.apply_override(
+        apply_override_config(
             target,
             {"action_only": {"categories": {"bash": True, "io": True}}},
         )
@@ -403,7 +410,7 @@ class TestConfigApplyOverride:
 
     def test_failure_capture_per_field(self):
         target = Config()
-        Config.apply_override(
+        apply_override_config(
             target,
             {"failure_capture": {"enabled": True, "max_stderr_lines": 100}},
         )
@@ -562,7 +569,7 @@ class TestNewlinePolicyStringEndToEnd:
         from cclogger.formatters.legacy import _resolve_newline_policy
 
         target = ChannelOptions()
-        ChannelOptions.apply_override(target, {"newline_policy": "render"})
+        apply_override_channel_options(target, {"newline_policy": "render"})
         # Apply_override stores the string verbatim (documented contract)
         assert target.newline_policy == "render"
         # Resolver coerces to enum at format time
@@ -573,7 +580,7 @@ class TestNewlinePolicyStringEndToEnd:
         from cclogger.formatters.legacy import _resolve_newline_policy
 
         target = ChannelOptions()
-        ChannelOptions.apply_override(target, {"newline_policy": "escape"})
+        apply_override_channel_options(target, {"newline_policy": "escape"})
         resolved = _resolve_newline_policy(target, role="user", tool_name=None)
         assert resolved == NewlinePolicy.ESCAPE
 
@@ -596,7 +603,7 @@ class TestNewlinePolicyStringEndToEnd:
             formatter="chat",
             newline_policy=NewlinePolicy.RENDER,
         )
-        ChannelOptions.apply_override(target, {"newline_policy": "escape"})
+        apply_override_channel_options(target, {"newline_policy": "escape"})
         # User override stored as string; other shipped options preserved
         assert target.newline_policy == "escape"
         assert target.verbosity == "full"
@@ -620,7 +627,7 @@ class TestFilePrefixRename:
         # Sanity: shipped convo defaults
         assert target.channels["convo"].file_prefix == ".convo_"
         # User renames the file_prefix on an existing channel
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"convo": {"file_prefix": ".conversation_"}}},
         )
@@ -634,7 +641,7 @@ class TestFilePrefixRename:
         """Renaming a shipped channel mutates in place — no new entry added."""
         target = RoutingConfig()
         channel_count_before = len(target.channels)
-        RoutingConfig.apply_override(
+        apply_override_routing_config(
             target,
             {"channels": {"shell": {"file_prefix": ".sh_"}}},
         )

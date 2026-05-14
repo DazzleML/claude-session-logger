@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from cclogger.categorize import categorize_tool
-from cclogger.config import parse_bool
+from cclogger.config_merge import parse_bool
 from cclogger.models import (
     HINT_VERBOSITY_KEYS,
     RESERVED_VERBOSITY_KEYS,

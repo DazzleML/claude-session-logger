@@ -13,11 +13,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from cclogger.config_merge import apply_override_config, parse_bool
 from cclogger.debug import debug_log
-from cclogger.models import (
-    Config,
-    parse_bool,
-)
+from cclogger.models import Config
 
 
 # ============================================================================
@@ -283,10 +281,11 @@ class ConfigLoader:
     def _apply_new_config(cls, config: Config, data: dict[str, Any]) -> None:
         """Apply new-config-format dict to an existing Config in place.
 
-        v0.3.7 #45 fix: dispatches to the per-dataclass apply_override
-        protocol on Config (which recurses through RoutingConfig →
-        ChannelConfig → ChannelOptions, plus PerformanceConfig). Existing
-        channels get per-field merge that preserves shipped defaults the
-        user didn't redeclare; new channels still require `file_prefix`.
+        v0.3.7 #45 fix + Phase 6 cleanup: dispatches to the per-dataclass
+        apply_override protocol in `cclogger.config_merge` (which recurses
+        through RoutingConfig → ChannelConfig → ChannelOptions, plus
+        PerformanceConfig). Existing channels get per-field merge that
+        preserves shipped defaults the user didn't redeclare; new channels
+        still require `file_prefix`.
         """
-        Config.apply_override(config, data)
+        apply_override_config(config, data)

@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes (Phase 6)
 - **Snapshot baseline byte-identical**: the fix only affects user-config overrides; default behavior with no user config is unchanged. `python tests/snapshots/diff_check.py` confirms 14 log files match baseline byte-for-byte.
-- **Total tests: 270** (101 Phase 0 + 45 Phase 1 + 56 Phase 2+3 + 8 Phase 4 + 19 Phase 5 incl. #46 regressions + 38 Phase 6 #45 protocol + 3 mid-phase carryover).
+- **Total tests: 276** (101 Phase 0 + 45 Phase 1 + 56 Phase 2+3 + 8 Phase 4 + 19 Phase 5 incl. #46 regressions + 44 Phase 6 #45 protocol + 3 mid-phase carryover).
 - **Architectural foundation for v0.4.x epic #44**: the apply_override protocol replaces ad-hoc construction logic with a uniform per-field-merge contract every typed config structure will follow. Adding new nested dataclasses (e.g., per-channel rotation policies, custom formatter parameters, channel-level filter rules) costs one method on the dataclass instead of patching the loader.
+
+### Changed (Phase 6 follow-up — apply_override module extraction)
+- **`cclogger/config_merge.py`** — new module owning the merge protocol entirely. The 5 `apply_override` classmethods previously attached to `Config`/`RoutingConfig`/`ChannelConfig`/`ChannelOptions`/`PerformanceConfig` are now free functions (`apply_override_config`, `apply_override_routing_config`, etc.) in this module. The two coercion helpers `parse_bool` and `_validate_per_role_dict` also moved here since they exist solely to support the merge protocol. Net effect: data definitions in `models.py` are now pure (no methods); the merge implementation is isolated to one file so future swaps (e.g., to OmegaConf or another library, per the help-agent prior-art survey) touch a single module without affecting the dataclass layout. Behavior unchanged — 276 tests pass + snapshot byte-identical.
 
 ### Added (Phase 5 — `.agents_*` channel, Closes #40)
 - **New `.agents_*` channel** for sub-agent invocations (#40): dedicated log surface where `Task` tool entries land. "Show me everything I asked the senior-engineer to do this week" becomes a single `tail .agents_*.log`, not a grep across sesslog. Channel enabled by default; users can disable via `routing.channels.agents.enabled = false`.
