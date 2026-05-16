@@ -46,8 +46,10 @@ from cclogger.formatters import generate_entry, get_command_content, truncate_pr
 from cclogger.logger import SessionLogger
 from cclogger.models import (
     ChannelConfig,
+    ChannelOptions,
     Config,
     LogEntry,
+    NewlinePolicy,
     PerformanceConfig,
     RoutingConfig,
     SessionContext,
@@ -64,9 +66,11 @@ from cclogger.session_state import build_session_context
 
 __all__ = [
     "ChannelConfig",
+    "ChannelOptions",
     "Config",
     "ConfigLoader",
     "LogEntry",
+    "NewlinePolicy",
     "PerformanceConfig",
     "RoutingConfig",
     "SUBTYPE_EXTRACTORS",

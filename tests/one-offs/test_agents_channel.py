@@ -336,9 +336,14 @@ class TestHookSubprocessHonorsUserConfig:
     def test_hook_subprocess_honors_user_subtype_routing(self, tmp_path):
         """End-to-end regression: spawn log-command.py as a subprocess with
         HOME redirected to a tmp dir containing a user config that enables
-        `subtype_routing.bash = true`. Fire a Bash tool event. Verify a
-        `.bash-bash_*.log` (or similar subtype-derived) file materializes,
-        proving the hook actually loaded the user config.
+        per-channel subtype splitting on the `shell` channel. Fire a
+        PowerShell tool event. Verify a `.shell-powershell_*.log` file
+        materializes, proving the hook actually loaded the user config.
+
+        v0.3.7-pre: subtype splitting moved from category-wide
+        `routing.subtype_routing.<cat>` (removed) to per-channel
+        `routing.channels.<name>.options.subtype_split`. This test pins
+        the per-channel API end-to-end.
 
         This complements the AST tests above with a real execution-path
         check — the AST tests catch "someone changed the call site," this
@@ -354,13 +359,15 @@ class TestHookSubprocessHonorsUserConfig:
         repo_root = Path(__file__).resolve().parent.parent.parent
         hook_script = repo_root / "hooks" / "scripts" / "log-command.py"
 
-        # Set up tmp HOME with user config enabling bash subtype routing
+        # Set up tmp HOME with user config enabling subtype_split on `shell`
         config_dir = tmp_path / ".claude" / "plugins" / "settings"
         config_dir.mkdir(parents=True)
         config_path = config_dir / "session-logger.json"
         config_path.write_text(json.dumps({
             "routing": {
-                "subtype_routing": {"bash": True},
+                "channels": {
+                    "shell": {"options": {"subtype_split": True}},
+                },
             }
         }), encoding="utf-8")
 
@@ -400,21 +407,33 @@ class TestHookSubprocessHonorsUserConfig:
             f"Hook exited {result.returncode}: stderr={result.stderr[:500]}"
         )
 
-        # The user config enables `subtype_routing.bash = true`. The bash
-        # category's subtype extractor uses the tool name (lowercased), so
-        # PowerShell -> "powershell". Expect a `.bash-powershell_*.log` and
-        # also `.shell-powershell_*.log` and `.tools-powershell_*.log` (any
-        # base channel that bash routes to gets the subtype expansion).
+        # The user config enables `shell.options.subtype_split = true`.
+        # PowerShell tool is in `bash` category whose extractor lowercases
+        # the tool name -> "powershell". Only `shell` opted in, so we
+        # expect EXACTLY `.shell-powershell_*.log` -- NOT `.tools-powershell_*`
+        # or `.sesslog-powershell_*` (those channels stayed at default
+        # subtype_split=False). This is the Bug A fix in action.
         sesslogs = tmp_path / ".claude" / "sesslogs"
         all_files = list(sesslogs.rglob("*.log")) if sesslogs.exists() else []
         all_names = sorted(p.name for p in all_files)
 
-        # Diagnostic: if we don't find subtype files, dump what was created
-        subtype_files = [n for n in all_names if "-powershell" in n]
-        assert subtype_files, (
-            f"User config `subtype_routing.bash = true` not honored by hook. "
-            f"Expected at least one `*-powershell_*.log` file. "
+        shell_subtype = [n for n in all_names if n.startswith(".shell-powershell_")]
+        tools_subtype = [n for n in all_names if n.startswith(".tools-powershell_")]
+        sesslog_subtype = [n for n in all_names if n.startswith(".sesslog-powershell_")]
+
+        assert shell_subtype, (
+            f"User config `shell.options.subtype_split = true` not honored. "
+            f"Expected at least one `.shell-powershell_*.log` file. "
             f"Got: {all_names}. "
-            f"This regression means the hook is not loading the new-style user "
-            f"config (Github #46) -- ConfigLoader.load() may not be wired."
+            f"Either the hook isn't loading the new-style user config "
+            f"(Github #46), or the per-channel subtype_split field isn't "
+            f"wired into _expand_with_subtype_channels."
+        )
+        assert not tools_subtype, (
+            f"Bug A regression: tools channel got subtype split despite "
+            f"subtype_split=False default. tools-subtype files: {tools_subtype}"
+        )
+        assert not sesslog_subtype, (
+            f"Bug A regression: sesslog channel got subtype split despite "
+            f"subtype_split=False default. sesslog-subtype files: {sesslog_subtype}"
         )

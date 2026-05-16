@@ -15,7 +15,12 @@ from typing import Any, Optional
 
 from cclogger.categorize import get_subtype
 from cclogger.debug import debug_log
-from cclogger.file_io import atomic_append, check_time_gap, migrate_overflow_files
+from cclogger.file_io import (
+    atomic_append,
+    check_time_gap,
+    migrate_overflow_files,
+    sweep_orphan_session_name_files,
+)
 from cclogger.formatters import format_datetime, format_for_channel
 from cclogger.markers import (
     count_compaction_markers,
@@ -65,12 +70,21 @@ class SessionLogger:
             self._reconcile_files()
 
         # Absorb any legacy `.overflow.N` files from prior versions into
-        # their main log files. Idempotent via sentinel marker; only
-        # scans the dir on first run after upgrade. Must run after
-        # `_reconcile_files` (so renames have stabilized) and before
-        # `_maybe_write_session_marker` (so markers land in the merged file).
+        # their main log files (#47), then sweep up any orphan-session-name
+        # files left behind by the pre-fix reconciliation enumeration
+        # (Bug B). Both idempotent via per-session-dir sentinels; only
+        # scan on first run after upgrade. Must run AFTER `_reconcile_files`
+        # (so canonical renames have stabilized) and BEFORE
+        # `_maybe_write_session_marker` (so markers land in the merged
+        # file with the correct session name).
         if is_new_session_run(self.session.session_id):
             migrate_overflow_files(self.session_dir)
+            if self.effective_name:
+                sweep_orphan_session_name_files(
+                    self.session_dir,
+                    self.effective_name,
+                    self.session.session_id,
+                )
 
         # Handle session start marker
         self._maybe_write_session_marker()
@@ -99,13 +113,18 @@ class SessionLogger:
         # Get username from session
         username = self.session.username
 
-        # Reconcile all file categories within the session directory
+        # Reconcile all file categories within the session directory.
+        # Pass every declared channel so reconciliation covers tools/convo/
+        # unknowns/agents/fileio (Bug B fix, v0.3.7-pre). Subtype derivatives
+        # found via filesystem scan are reconciled in-place inside the
+        # function and not added to the target-paths dict.
         self._target_paths = reconcile_session_files(
             self.session_dir,
             self.session.session_id,
             self.effective_name,
             self.session.shell_type,
-            username
+            username,
+            channel_names=list(self.config.routing.channels.keys()),
         )
         self._reconciled = True
 
@@ -264,35 +283,40 @@ class SessionLogger:
         tool_category: str,
         raw_json: Optional[dict[str, Any]] = None
     ) -> list[str]:
-        """Expand channel list with per-subtype channels when subtype routing is enabled.
+        """Expand channel list with per-subtype channels per channel opt-in.
 
-        For each channel in the list, if subtype routing is enabled for this
-        tool's category AND a subtype can be extracted, also include the
-        derived `<channel>-<subtype>` channel.
+        v0.3.7-pre (supersedes #48): subtype splitting is decided per-channel
+        via `ChannelOptions.subtype_split` rather than category-wide via the
+        former `routing.subtype_routing` toggle. For each base channel, the
+        channel's own options say whether to add a `<channel>-<subtype>`
+        sibling for the current event:
 
-        Subtype routing modes (per category):
-          - missing or False: no expansion
-          - True: expand for any subtype encountered
-          - list[str]: expand only when subtype matches one in the list
+          - subtype_split = False (default): no expansion for this channel
+          - subtype_split = True            : expand for any subtype
+          - subtype_split = ["help", "X"]   : expand only for listed subtypes
+
+        Iterates the ORIGINAL channel list, NOT the expanded list -- this is
+        the no-recursion guarantee. `.agents-help_*` never chains further to
+        `.agents-help-bash_*` even if multiple categories have extractors.
         """
-        subtype_setting = self.config.routing.subtype_routing.get(tool_category, False)
-        if not subtype_setting:
-            return channels  # No subtype routing for this category
-
         if raw_json is None:
             return channels  # Cannot extract subtype without raw_json
 
         subtype = get_subtype(tool_category, tool_name, raw_json)
         if not subtype:
-            return channels  # No meaningful subtype
+            return channels  # No meaningful subtype to attach
 
-        # If a list was provided, only split for matching subtypes
-        if isinstance(subtype_setting, list) and subtype not in subtype_setting:
-            return channels
-
-        # Append per-subtype channels for each base channel
         expanded = list(channels)
-        for base_channel in channels:
+        for base_channel in channels:  # iterate ORIGINAL list -- no recursion
+            channel_obj = self.config.routing.channels.get(base_channel)
+            opts = self._resolve_channel_options(channel_obj, base_channel)
+            if opts is None:
+                continue  # No options resolvable -- subtype_split is False by definition
+            split = opts.subtype_split
+            if not split:
+                continue
+            if isinstance(split, list) and subtype not in split:
+                continue
             subtype_channel = f"{base_channel}-{subtype}"
             if subtype_channel not in expanded:
                 expanded.append(subtype_channel)

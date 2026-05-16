@@ -32,6 +32,8 @@ from cclogger.file_io import (
     atomic_append,
     migrate_overflow_files,
     OVERFLOW_MIGRATION_SENTINEL,
+    SESSION_LOGGER_README,
+    _LEGACY_OVERFLOW_SENTINELS,
 )
 
 
@@ -162,6 +164,56 @@ class TestMigration:
         n = migrate_overflow_files(ghost)
         assert n == 0
         assert not ghost.exists()
+
+    def test_legacy_sentinel_recognized_and_self_upgrades(self, tmp_path):
+        """A dir with the pre-v0.3.7-pre sentinel name short-circuits AND
+        drops the new-named sentinel so future checks find the new name."""
+        for legacy_name in _LEGACY_OVERFLOW_SENTINELS:
+            legacy = tmp_path / legacy_name
+            legacy.write_text("# legacy sentinel content\n", encoding="utf-8")
+            # Create an overflow that should NOT be absorbed (legacy sentinel says we're done)
+            (tmp_path / "channel.log.overflow.1").write_text("should-not-absorb\n", encoding="utf-8")
+            n = migrate_overflow_files(tmp_path)
+            assert n == 0, "legacy sentinel should short-circuit"
+            # Overflow stayed (was NOT absorbed because we short-circuited)
+            assert (tmp_path / "channel.log.overflow.1").exists()
+            # NEW sentinel was dropped alongside the legacy one
+            assert (tmp_path / OVERFLOW_MIGRATION_SENTINEL).exists()
+            # README also dropped during the upgrade path
+            assert (tmp_path / SESSION_LOGGER_README).exists()
+            # Cleanup for next loop iteration
+            (tmp_path / OVERFLOW_MIGRATION_SENTINEL).unlink()
+            (tmp_path / SESSION_LOGGER_README).unlink()
+            (tmp_path / legacy_name).unlink()
+            (tmp_path / "channel.log.overflow.1").unlink()
+
+    def test_sentinel_content_is_self_documenting(self, tmp_path):
+        """Sentinel body explains what it is and confirms safe-to-delete."""
+        migrate_overflow_files(tmp_path)
+        sentinel = tmp_path / OVERFLOW_MIGRATION_SENTINEL
+        assert sentinel.exists()
+        body = sentinel.read_text(encoding="utf-8")
+        assert "claude-session-logger" in body.lower()
+        assert "safe to delete" in body.lower()
+
+    def test_readme_dropped_when_sentinel_created(self, tmp_path):
+        """README.session-logger.md is dropped when migration runs."""
+        migrate_overflow_files(tmp_path)
+        readme = tmp_path / SESSION_LOGGER_README
+        assert readme.exists()
+        body = readme.read_text(encoding="utf-8")
+        # Doc should explain key concepts
+        assert ".session-logger-" in body
+        assert "baks/" in body
+        assert "safe to delete" in body.lower()
+
+    def test_readme_never_overwritten(self, tmp_path):
+        """If a user already has a README.session-logger.md, never overwrite it."""
+        readme = tmp_path / SESSION_LOGGER_README
+        user_content = "# my own notes, do not touch\n"
+        readme.write_text(user_content, encoding="utf-8")
+        migrate_overflow_files(tmp_path)
+        assert readme.read_text(encoding="utf-8") == user_content
 
     def test_single_overflow_absorbed_with_banner(self, tmp_path):
         main = tmp_path / "channel.log"

@@ -1,6 +1,6 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "AGENT DEBUG preset: focused on subagent behavior. Splits agent dialogue per-agent (.convo-help_*, .convo-senior-engineer_*, etc.) for focused debugging across sessions.",
+  "_comment": "AGENT DEBUG preset: focused on subagent behavior. The `agents` channel ships with subtype_split=true by default (v0.3.7-pre, supersedes #48), so `.agents-help_*`, `.agents-senior-engineer_*`, etc. materialize automatically when agents fire. No extra config is needed for per-agent breakdown.",
 
   "routing": {
     "channels": {
@@ -10,9 +10,6 @@
       "tools":    {"file_prefix": ".tools_",    "enabled": true},
       "convo":    {"file_prefix": ".convo_",    "enabled": true},
       "unknowns": {"file_prefix": ".unknowns_", "enabled": false}
-    },
-    "subtype_routing": {
-      "meta": true
     }
   }
 }

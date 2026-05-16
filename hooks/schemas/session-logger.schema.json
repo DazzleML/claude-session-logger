@@ -120,6 +120,14 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Opt out of session-marker broadcast (used by v0.3.7 #39 marker-broadcast work)."
+                  },
+                  "subtype_split": {
+                    "default": false,
+                    "description": "v0.3.7-pre per-channel subtype split control (supersedes the removed routing.subtype_routing category-wide toggle). true = split for any subtype the channel's traffic generates; list[str] = split only for listed subtype names (e.g., ['help', 'senior-engineer']); false (default) = no split. Single-level only: `.agents-help_*` never chains to `.agents-help-bash_*`. Default true only on the `agents` channel.",
+                    "oneOf": [
+                      {"type": "boolean"},
+                      {"type": "array", "items": {"type": "string"}}
+                    ]
                   }
                 }
               }
@@ -146,17 +154,6 @@
             "task": ["shell", "sesslog", "tools", "tasks"],
             "unknown": ["sesslog", "unknowns"]
           }
-        },
-        "subtype_routing": {
-          "type": "object",
-          "description": "Per-category opt-in for splitting entries into per-subtype channels (e.g., .bash-powershell_*, .mcp-github_*). Default OFF for all categories.",
-          "additionalProperties": {
-            "oneOf": [
-              {"type": "boolean", "description": "true = split for all subtypes; false = no split"},
-              {"type": "array", "items": {"type": "string"}, "description": "Split only for these specific subtypes"}
-            ]
-          },
-          "default": {}
         },
         "tool_overrides": {
           "type": "object",

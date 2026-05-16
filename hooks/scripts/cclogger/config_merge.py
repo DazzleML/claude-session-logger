@@ -140,6 +140,16 @@ def apply_override_channel_options(
     if "suppress_markers" in override:
         target.suppress_markers = parse_bool(override["suppress_markers"])
 
+    if "subtype_split" in override:
+        v = override["subtype_split"]
+        if isinstance(v, bool):
+            target.subtype_split = v
+        elif isinstance(v, list):
+            # Filter to strings; non-string entries dropped silently
+            target.subtype_split = [item for item in v if isinstance(item, str)]
+        elif v is None:
+            target.subtype_split = False
+
 
 def apply_override_channel_config(
     target: ChannelConfig, override: Any, channel_name: str = ""
@@ -208,11 +218,9 @@ def apply_override_routing_config(target: RoutingConfig, override: Any) -> None:
             if isinstance(channels_list, list):
                 target.tool_overrides[tool_name] = channels_list
 
-    subtype_routing = override.get("subtype_routing")
-    if isinstance(subtype_routing, dict):
-        for category, value in subtype_routing.items():
-            if isinstance(value, (bool, list)):
-                target.subtype_routing[category] = value
+    # NOTE: v0.3.3 `subtype_routing` is removed in v0.3.7-pre (supersedes #48).
+    # Subtype splitting is now per-channel via ChannelOptions.subtype_split.
+    # Any `routing.subtype_routing` key in user config is silently ignored.
 
 
 def apply_override_performance_config(target: PerformanceConfig, override: Any) -> None:

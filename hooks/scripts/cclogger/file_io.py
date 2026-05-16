@@ -28,6 +28,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from cclogger.debug import debug_log
 from cclogger.file_lock import lock_exclusive, lock_nonblocking, unlock
@@ -43,8 +44,23 @@ LOCK_RETRY_BACKOFF_MS = (10, 50, 200)
 
 # One-time migration sentinel. Presence in a session directory means
 # legacy `.overflow.N` files have already been absorbed (or there were
-# none to absorb). Bump the suffix on future schema-affecting changes.
-OVERFLOW_MIGRATION_SENTINEL = ".overflow_migrated_v0.3.7"
+# none to absorb). v0.3.7-pre rename: was `.overflow_migrated_v0.3.7`.
+# The old name is still recognized on read so existing sentinels keep
+# working (see _has_overflow_sentinel below).
+OVERFLOW_MIGRATION_SENTINEL = ".session-logger-overflow-migrated"
+_LEGACY_OVERFLOW_SENTINELS = (".overflow_migrated_v0.3.7",)
+
+# One-time orphan-name sweep sentinel. Presence means the directory has
+# already been scanned for log files bearing OLD session names (Bug B
+# pre-v0.3.7-pre). Renamed from `.orphan_session_name_swept_v0.3.7`.
+ORPHAN_SWEEP_SENTINEL = ".session-logger-orphans-swept"
+_LEGACY_ORPHAN_SENTINELS = (".orphan_session_name_swept_v0.3.7",)
+
+# Per-session-dir README that explains the .session-logger-* state files.
+# Written exactly once, only if no file already exists at that name --
+# users sometimes drop their own README.md in session dirs, and we never
+# overwrite. The README.session-logger.md suffix makes ownership obvious.
+SESSION_LOGGER_README = "README.session-logger.md"
 
 
 # ============================================================================
@@ -231,6 +247,14 @@ def migrate_overflow_files(session_dir: Path) -> int:
     sentinel = session_dir / OVERFLOW_MIGRATION_SENTINEL
     if sentinel.exists():
         return 0
+    # Recognize legacy sentinel names so existing dirs don't re-scan after the
+    # v0.3.7-pre rename. Drop the new-named sentinel alongside so future
+    # checks find the new name immediately.
+    for legacy_name in _LEGACY_OVERFLOW_SENTINELS:
+        if (session_dir / legacy_name).exists():
+            _drop_sentinel(sentinel, absorbed=0, kind="overflow")
+            _ensure_session_logger_readme(session_dir)
+            return 0
 
     # Find all .overflow.N files in session dir
     overflow_files: list[tuple[Path, str]] = []
@@ -247,7 +271,8 @@ def migrate_overflow_files(session_dir: Path) -> int:
 
     if not overflow_files:
         # Drop sentinel anyway so subsequent SessionStarts don't re-scan
-        _drop_sentinel(sentinel, absorbed=0)
+        _drop_sentinel(sentinel, absorbed=0, kind="overflow")
+        _ensure_session_logger_readme(session_dir)
         return 0
 
     # Sort by mtime to preserve write order across the session
@@ -305,7 +330,8 @@ def migrate_overflow_files(session_dir: Path) -> int:
                     f"Failed to delete overflow {overflow_path.name}: {e}"
                 )
 
-    _drop_sentinel(sentinel, absorbed=absorbed_count)
+    _drop_sentinel(sentinel, absorbed=absorbed_count, kind="overflow")
+    _ensure_session_logger_readme(session_dir)
     debug_log(
         f"Overflow migration complete in {session_dir.name}: "
         f"{absorbed_count} file(s) absorbed"
@@ -313,12 +339,204 @@ def migrate_overflow_files(session_dir: Path) -> int:
     return absorbed_count
 
 
-def _drop_sentinel(sentinel: Path, absorbed: int) -> None:
-    """Write the migration sentinel marker. Best-effort; logs and continues on failure."""
+_SENTINEL_BODIES = {
+    "overflow": (
+        "# claude-session-logger overflow migration marker\n"
+        "#\n"
+        "# This file's presence tells the hook that any legacy `.overflow.N`\n"
+        "# files in this directory have already been absorbed into the\n"
+        "# corresponding main `.<channel>_*.log` file. Pre-v0.3.7 versions\n"
+        "# of atomic_append occasionally fell back to `.overflow.N` siblings\n"
+        "# on Windows file-lock conflicts; v0.3.7's append+lock primitive\n"
+        "# eliminated that failure mode.\n"
+        "#\n"
+        "# Safe to delete: yes. Deletion causes the scan to re-run on next\n"
+        "# SessionStart; if no `.overflow.N` files are present (the normal\n"
+        "# state since v0.3.7), the scan is a no-op and this marker\n"
+        "# regenerates automatically.\n"
+        "#\n"
+        "# See README.session-logger.md (same directory) for an overview.\n"
+    ),
+    "orphan": (
+        "# claude-session-logger orphan-name sweep marker\n"
+        "#\n"
+        "# This file's presence tells the hook that any log files bearing an\n"
+        "# OLD session name (left behind by a pre-v0.3.7-pre rename bug,\n"
+        "# Github #49) have already been moved to `baks/` in this directory.\n"
+        "# Going forward, rename reconciliation enumerates every declared\n"
+        "# channel + every subtype derivative, so new orphans should not form.\n"
+        "#\n"
+        "# Safe to delete: yes. Deletion causes the sweep to re-run on next\n"
+        "# SessionStart; in the normal state (no orphans present) the scan\n"
+        "# is a no-op and this marker regenerates automatically.\n"
+        "#\n"
+        "# See README.session-logger.md (same directory) for an overview.\n"
+    ),
+}
+
+
+def _drop_sentinel(sentinel: Path, absorbed: int, kind: str = "overflow") -> None:
+    """Write the migration sentinel marker with self-documenting content.
+
+    Body explains what the marker means and confirms the file is safe to
+    delete. Best-effort: logs and continues on write failure.
+    """
+    body = _SENTINEL_BODIES.get(kind, _SENTINEL_BODIES["overflow"])
+    timestamp = datetime.now().isoformat()
+    content = f"# Created {timestamp} | absorbed={absorbed}\n{body}"
     try:
-        sentinel.write_text(
-            f"{datetime.now().isoformat()} absorbed={absorbed}\n",
-            encoding="utf-8",
-        )
+        sentinel.write_text(content, encoding="utf-8")
     except OSError as e:
-        debug_log(f"Could not drop overflow migration sentinel: {e}")
+        debug_log(f"Could not drop {kind} sentinel {sentinel.name}: {e}")
+
+
+_SESSION_LOGGER_README_BODY = """# claude-session-logger session directory
+
+This directory holds log files produced by the
+[claude-session-logger](https://github.com/DazzleML/claude-session-logger)
+hook for one Claude Code session. The contents are managed by the hook;
+this README is a one-time drop explaining the housekeeping markers you
+may notice here.
+
+## File types you may see
+
+| File pattern | What it is |
+|---|---|
+| `.<channel>_*.log` | Active log files (`.shell_*`, `.sesslog_*`, `.convo_*`, `.tools_*`, `.agents_*`, `.unknowns_*`, `.tasks_*`, `.fileio_*`) |
+| `.<channel>-<subtype>_*.log` | Per-subtype split files for channels that opt in via `ChannelOptions.subtype_split` (the `agents` channel defaults true so `.agents-help_*` etc. appear automatically) |
+| `transcript.jsonl` (symlink) | Shortcut to Claude Code's full transcript for this session |
+| `baks/` | Recoverable backup of files moved by housekeeping (see below) |
+| `.session-logger-overflow-migrated` | Marker: legacy `.overflow.N` files (if any) have been absorbed into their main log files |
+| `.session-logger-orphans-swept` | Marker: log files bearing OLD session names (from a pre-v0.3.7-pre rename bug) have been moved to `baks/` |
+
+## Are the `.session-logger-*` markers safe to delete?
+
+Yes. They're state files: presence tells the hook "we already did this cleanup, skip the scan." Deleting one just causes the corresponding scan to re-run on the next SessionStart, which is a no-op when there's nothing to clean up.
+
+## Is `baks/` safe to delete?
+
+The hook never reads from `baks/` once a file lands there. It exists for your peace of mind: if a sweep moved something you wanted to keep, you can recover it. Safe to delete the whole subdirectory once you've reviewed it.
+
+## Where does configuration live?
+
+User config: `~/.claude/plugins/settings/session-logger.json`
+Schema: see the [project repository](https://github.com/DazzleML/claude-session-logger) for `hooks/schemas/session-logger.schema.json`.
+"""
+
+
+def _ensure_session_logger_readme(session_dir: Path) -> None:
+    """Drop README.session-logger.md in `session_dir` if it doesn't exist.
+
+    NEVER overwrites an existing file at that path -- the user may have
+    their own README in the directory. Best-effort: logs and continues on
+    write failure.
+
+    Naming: `README.session-logger.md` (not `README.md`) avoids any
+    collision with a user-placed README and makes ownership unambiguous.
+    """
+    readme = session_dir / SESSION_LOGGER_README
+    if readme.exists():
+        return  # never overwrite
+    try:
+        readme.write_text(_SESSION_LOGGER_README_BODY, encoding="utf-8")
+    except OSError as e:
+        debug_log(f"Could not write session-logger README in {session_dir.name}: {e}")
+
+
+# ============================================================================
+# One-time orphan-session-name sweep (Bug B cleanup, v0.3.7-pre)
+# ============================================================================
+
+
+def _embedded_session_name(filename: str, session_id: str) -> Optional[str]:
+    """Extract the session name embedded in a log filename, or None.
+
+    Pattern: `.{channel}_{shell-bits}__{name}__{guid}_{user}[.log]`.
+    Files without an embedded name (unnamed-form) or that don't embed the
+    GUID return None. Used by the sweep to identify orphans whose embedded
+    name doesn't match the current session name.
+    """
+    escaped_id = re.escape(session_id)
+    pattern = re.compile(rf"^\.[\w-]+_[\w.]+__([^_]+?)(?:--\d{{3}})?__{escaped_id}_\w+(\.log)?$")
+    match = pattern.match(filename)
+    if match:
+        return match.group(1)
+    return None
+
+
+def sweep_orphan_session_name_files(
+    session_dir: Path, current_session_name: str, session_id: str
+) -> int:
+    """Move files with current session UUID but wrong session name to baks/.
+
+    v0.3.7-pre (Bug B cleanup): when reconcile_session_files was hardcoded
+    to ["sesslog", "shell", "tasks"], any other channel file (.tools_*,
+    .convo_*, .agents_*, etc.) AND any subtype derivative kept getting
+    re-created under the OLD session name on every hook event after a
+    session rename. Result: duplicated per-channel files with different
+    embedded names. This sweep moves orphans (embedded name != current)
+    into `<session_dir>/baks/` for recoverable cleanup.
+
+    Idempotent via sentinel (mirrors migrate_overflow_files pattern).
+    Called from SessionLogger.__init__ AFTER `_reconcile_files()` (so
+    canonical-name renames are done first) and AFTER `migrate_overflow_files`
+    (so overflows are absorbed first). Anything still bearing the wrong
+    session name at this point is an actual orphan -- something the renamer
+    couldn't handle (e.g., destination already existed).
+
+    Returns: number of orphan files moved to baks/ (0 if sweep already
+    ran or no orphans present). Drops sentinel even on zero moves.
+    """
+    if not session_dir.exists() or not current_session_name:
+        return 0
+    sentinel = session_dir / ORPHAN_SWEEP_SENTINEL
+    if sentinel.exists():
+        return 0
+    # Recognize legacy sentinel names so existing dirs don't re-scan after
+    # the v0.3.7-pre rename. Drop the new-named sentinel alongside.
+    for legacy_name in _LEGACY_ORPHAN_SENTINELS:
+        if (session_dir / legacy_name).exists():
+            _drop_sentinel(sentinel, absorbed=0, kind="orphan")
+            _ensure_session_logger_readme(session_dir)
+            return 0
+
+    baks_dir: Optional[Path] = None  # Created on first move
+    moved = 0
+    try:
+        for f in session_dir.iterdir():
+            if not f.is_file():
+                continue
+            embedded = _embedded_session_name(f.name, session_id)
+            if embedded is None or embedded == current_session_name:
+                continue  # No embedded name OR canonical -- not an orphan
+            # Move to baks/<filename>; numeric suffix on collision.
+            if baks_dir is None:
+                baks_dir = session_dir / "baks"
+                try:
+                    baks_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as e:
+                    debug_log(f"Could not create baks dir for sweep: {e}")
+                    break
+            dest = baks_dir / f.name
+            i = 1
+            while dest.exists():
+                dest = baks_dir / f"{f.name}.{i}"
+                i += 1
+            try:
+                f.rename(dest)
+                moved += 1
+                debug_log(f"Swept orphan {f.name} -> baks/{dest.name}")
+            except OSError as e:
+                debug_log(f"Could not sweep orphan {f.name}: {e}")
+    except OSError as e:
+        debug_log(f"Sweep scan of {session_dir.name} failed: {e}")
+
+    # Drop sentinel even on zero moves so subsequent SessionStarts skip the scan
+    _drop_sentinel(sentinel, absorbed=moved, kind="orphan")
+    _ensure_session_logger_readme(session_dir)
+
+    if moved:
+        debug_log(
+            f"Orphan-name sweep complete in {session_dir.name}: {moved} file(s) moved to baks/"
+        )
+    return moved

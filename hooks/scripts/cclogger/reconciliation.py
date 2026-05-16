@@ -118,20 +118,23 @@ def reconcile_session_directory(sesslog_base: Path, session_id: str,
 
 def _rename_files_for_session_change(directory: Path, old_session_name: Optional[str],
                                       new_session_name: str, session_id: str) -> None:
-    """Rename log files in directory to reflect new session name.
+    """Rename ALL log files in directory to reflect new session name.
 
-    Handles both unnamed->named and named->renamed transitions.
-    This is the file-level counterpart to directory renaming.
+    Handles both unnamed->named and named->renamed transitions. This is
+    the file-level counterpart to directory renaming.
 
-    Only renames files matching the log filename pattern (.sesslog_*,
-    .shell_*, .tasks_*). Other files (transcript.jsonl, etc.) are
-    skipped to prevent corruption from substring replacement (#17).
+    v0.3.7-pre (Bug B fix): no longer restricted to .sesslog_/.shell_/.tasks_
+    prefixes. Walks every file whose name embeds the session GUID and
+    structurally matches the log-filename pattern -- catches all declared
+    channels (tools, convo, unknowns, agents, fileio, ...) AND all subtype
+    derivatives (.shell-bash_, .agents-help_, ...). Skips non-log files
+    (transcript.jsonl, sentinels like .session-logger-overflow-migrated,
+    README.session-logger.md) because they don't match the structural pattern.
     """
     if not directory.exists():
         return
 
-    # Only rename our log files -- skip transcript.jsonl and anything else
-    log_prefixes = (".sesslog_", ".shell_", ".tasks_")
+    escaped_id = re.escape(session_id)
 
     for f in directory.iterdir():
         if not f.is_file():
@@ -139,25 +142,28 @@ def _rename_files_for_session_change(directory: Path, old_session_name: Optional
 
         old_name = f.name
 
-        # Skip files that aren't our log files
-        if not old_name.startswith(log_prefixes):
+        # Skip anything that doesn't embed the session GUID + start with `.`
+        # (structural guard against non-log files and sentinels).
+        if not old_name.startswith(".") or session_id not in old_name:
             continue
 
         new_name = None
 
         if old_session_name:
-            # Named -> Renamed: use targeted regex to replace session name
-            # only in its structural position (between __ delimiters before GUID)
-            # Pattern: .prefix_shell__{old_name}__{guid}_{user}...
+            # Named -> Renamed: replace session name in its structural position
+            # (between __ delimiters before GUID). Works for both base channels
+            # (.sesslog_shell__OLD__guid_user.log) and subtype derivatives
+            # (.shell-bash_shell__OLD__guid_user.log) identically.
             escaped_old = re.escape(old_session_name)
-            escaped_id = re.escape(session_id)
             pattern = rf"(?<=__){escaped_old}(?=__{escaped_id})"
             if re.search(pattern, old_name):
                 new_name = re.sub(pattern, new_session_name, old_name)
         else:
-            # Unnamed -> Named: insert name before GUID
-            # Pattern: .type_shell_{guid}_{user}[.log] -> .type_shell__{name}__{guid}_{user}[.log]
-            pattern = rf"^(\.[\w]+_[\w.]+)_{re.escape(session_id)}_"
+            # Unnamed -> Named: insert name before GUID. The leading
+            # `.{channel}_{shell-bits}_` part is captured greedily before
+            # `_{guid}_`, which works for both plain (.sesslog_) and
+            # subtype-derived (.shell-bash_) channel prefixes.
+            pattern = rf"^(\.[\w-]+_[\w.]+)_{escaped_id}_"
             match = re.match(pattern, old_name)
             if match:
                 prefix = match.group(1)
@@ -415,26 +421,89 @@ def reconcile_single_category(sesslog_dir: Path, session_id: str, session_name: 
     return target_path
 
 
+def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
+    """Scan `sesslog_dir` for any channel basename present in filenames.
+
+    Returns the set of basenames (e.g., "sesslog", "shell", "tools",
+    "shell-bash", "agents-help", ...). Used by reconcile_session_files
+    to catch subtype-derived files that aren't enumerable from the
+    Config's declared channels list.
+
+    Pattern: leading `.{basename}_{shell}__...{session_id}_{user}[.log]`
+    or unnamed form `.{basename}_{shell}_{session_id}_{user}[.log]`.
+    Files not embedding the session GUID are skipped.
+    """
+    if not sesslog_dir.exists():
+        return set()
+    escaped_id = re.escape(session_id)
+    # `[\w-]+` allows subtype-derived basenames like "shell-bash" or "agents-help".
+    pattern = re.compile(rf"^\.([\w-]+)_[\w.]+_.*{escaped_id}_\w+(\.log)?$")
+    basenames: set[str] = set()
+    try:
+        for f in sesslog_dir.iterdir():
+            if not f.is_file():
+                continue
+            match = pattern.match(f.name)
+            if match:
+                basenames.add(match.group(1))
+    except OSError:
+        pass
+    return basenames
+
+
 def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: str,
-                            shell: str, username: str) -> dict[str, Path]:
+                            shell: str, username: str,
+                            channel_names: Optional[list[str]] = None) -> dict[str, Path]:
     """Reconcile all session files and return target paths.
 
-    Applies to all file categories: sesslog, shell, tasks (and Python_ variants).
+    v0.3.7-pre (Bug B fix): enumerates every declared channel (passed in
+    via `channel_names`) AND every subtype-derived basename discovered by
+    scanning the session directory. Previously hardcoded to
+    `["sesslog", "shell", "tasks"]`, which orphaned every other channel
+    (tools, convo, unknowns, agents, fileio, ...) plus all subtype
+    derivatives on session rename.
+
+    Args:
+        sesslog_dir: Session directory path
+        session_id: Session GUID
+        session_name: Current session name
+        shell: Shell type for filename construction
+        username: Username
+        channel_names: List of declared channel names from
+            config.routing.channels.keys(). When None, defaults to the
+            legacy hardcoded list for backward compatibility with any
+            internal caller that hasn't been updated yet. New code should
+            always pass the config-derived list.
 
     Returns:
-        Dict mapping file_type to target Path for writing
+        Dict mapping `{prefix}{file_type}` to target Path for writing.
+        Subtype-derived channels (e.g., "shell-bash") are reconciled
+        in-place (renamed on disk to match current session name) but
+        are not added to the returned dict -- they don't have a stable
+        per-channel write target the way base channels do.
     """
     if not session_name:
         return {}  # Nothing to reconcile without a name
 
-    targets = {}
+    targets: dict[str, Path] = {}
 
-    # All prefixes and file types
+    # Default to legacy set when caller hasn't been updated yet.
+    if channel_names is None:
+        channel_names = ["sesslog", "shell", "tasks"]
+
+    # Discover any subtype-derived basenames present on disk so we can
+    # rename them too. Base names that are already in `channel_names` are
+    # filtered out below (they get the full reconcile-and-target path).
+    discovered = discover_channel_basenames(sesslog_dir, session_id)
+    declared_set = set(channel_names)
+    subtype_basenames = discovered - declared_set
+
+    # All prefixes (Python_ kept for back-compat with v0.2.x file naming).
     prefixes = ["", "Python_"]
-    file_types = ["sesslog", "shell", "tasks"]
 
+    # Phase 1: declared channels -- full reconciliation (rename + target path).
     for prefix in prefixes:
-        for file_type in file_types:
+        for file_type in channel_names:
             key = f"{prefix}{file_type}"
             target = reconcile_single_category(
                 sesslog_dir, session_id, session_name,
@@ -442,5 +511,14 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
             )
             if target:
                 targets[key] = target
+
+    # Phase 2: subtype-derived basenames -- rename only (no target path needed;
+    # they materialize lazily on the next subtype-split write).
+    for basename in subtype_basenames:
+        for prefix in prefixes:
+            reconcile_single_category(
+                sesslog_dir, session_id, session_name,
+                shell, username, prefix, basename
+            )
 
     return targets

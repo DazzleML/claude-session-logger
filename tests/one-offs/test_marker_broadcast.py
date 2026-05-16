@@ -157,7 +157,12 @@ class TestSubtypeDerivedChannelsExcluded:
 
     def test_subtype_routing_enabled_does_not_create_subtype_marker(self, fresh_session):
         config, session, event_time = fresh_session
-        config.routing.subtype_routing["bash"] = True
+        # v0.3.7-pre: subtype splitting moved from category-wide
+        # `routing.subtype_routing["bash"]` to per-channel
+        # `routing.channels[name].options.subtype_split`. Same intent here:
+        # opt shell into subtype splitting, then verify subtype-derived
+        # channels are still excluded from marker broadcast.
+        config.routing.channels["shell"].options.subtype_split = True
 
         logger = _instantiate(config, session, event_time)
 

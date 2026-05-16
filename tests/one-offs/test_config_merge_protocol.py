@@ -298,14 +298,19 @@ class TestRoutingConfigApplyOverride:
         # Other categories preserved
         assert target.category_routes["task"] == ["shell", "sesslog", "tools", "tasks"]
 
-    def test_subtype_routing_per_key_set(self):
+    def test_legacy_subtype_routing_key_silently_ignored(self):
+        """v0.3.7-pre (supersedes #48): subtype splitting moved from
+        category-keyed routing.subtype_routing to per-channel
+        ChannelOptions.subtype_split. Legacy user configs that still set
+        the old key must NOT raise; the key is dropped at merge time."""
         target = RoutingConfig()
+        # Should not raise even though field no longer exists on dataclass
         apply_override_routing_config(
             target,
             {"subtype_routing": {"bash": True, "meta": ["senior-engineer", "help"]}},
         )
-        assert target.subtype_routing["bash"] is True
-        assert target.subtype_routing["meta"] == ["senior-engineer", "help"]
+        # No field for it to land on
+        assert not hasattr(target, "subtype_routing")
 
     def test_tool_overrides_per_key_replace(self):
         target = RoutingConfig()
@@ -364,27 +369,33 @@ class TestConfigApplyOverride:
         # tool_overrides empty (default)
         assert target.routing.tool_overrides == {}
 
-    def test_combined_override_subtype_and_channel_options(self):
-        """Realistic Section L sweep: combine subtype_routing + channel options."""
+    def test_combined_override_subtype_split_and_channel_options(self):
+        """Realistic v0.3.7-pre sweep: per-channel subtype_split + options merge."""
         target = Config()
         apply_override_config(
             target,
             {
                 "routing": {
-                    "subtype_routing": {"meta": True},
                     "channels": {
                         "convo": {"options": {"suppress_markers": True}},
-                        "tools": {"options": {"verbosity": {"max_chars": 50}}},
+                        "tools": {
+                            "options": {
+                                "verbosity": {"max_chars": 50},
+                                "subtype_split": True,
+                            }
+                        },
                     },
                 }
             },
         )
-        assert target.routing.subtype_routing["meta"] is True
         assert target.routing.channels["convo"].options.suppress_markers is True
         assert target.routing.channels["tools"].options.verbosity == {"max_chars": 50}
-        # Convo's other shipped options preserved
+        assert target.routing.channels["tools"].options.subtype_split is True
+        # Convo's other shipped options preserved (per-key merge)
         assert target.routing.channels["convo"].options.formatter == "chat"
         assert target.routing.channels["convo"].options.newline_policy == NewlinePolicy.RENDER
+        # agents shipped default subtype_split=True preserved by per-key merge
+        assert target.routing.channels["agents"].options.subtype_split is True
 
     def test_idempotent(self):
         """Applying the same override twice yields the same result."""

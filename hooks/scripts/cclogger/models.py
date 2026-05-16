@@ -147,6 +147,13 @@ class ChannelOptions:
     newline_policy: Optional[Union[NewlinePolicy, str, dict]] = None
     role_labels: Optional[dict[str, str]] = None  # per-channel override of global ROLE_LABELS
     suppress_markers: bool = False  # opt out of session-marker broadcast (v0.3.7 #39)
+    # Per-channel subtype split control (v0.3.7-pre, supersedes #48).
+    #   False (default)         -- no subtype expansion for this channel
+    #   True                    -- expand for any subtype the channel's traffic generates
+    #   list[str] e.g. ["help"] -- expand only when extracted subtype matches one of these
+    # The expander iterates the ORIGINAL channel list, not the expanded list, so
+    # there is no recursion (`.agents-help_*` never becomes `.agents-help-bash_*`).
+    subtype_split: Union[bool, list] = False
 
 
 # ============================================================================
@@ -338,17 +345,18 @@ def _default_channels() -> dict[str, ChannelConfig]:
                 newline_policy=NewlinePolicy.RENDER,
             ),
         ),
-        # Phase 5 (Github #40): dedicated agent-invocation channel. Task tool
-        # invocations land here so "show me everything I asked the
-        # senior-engineer to do" is one channel-tail, not a grep across
-        # sesslog. Enable `routing.subtype_routing.meta = true` to split
-        # into per-agent files like `.agents-senior-engineer_*`,
-        # `.agents-help_*`, etc. via the `_subtype_for_meta` extractor
-        # (subagent_type). Subtype-derived channels inherit these options
-        # by default (declare-to-override, omit-to-inherit).
+        # Phase 5 (Github #40) + v0.3.7-pre subtype-split rework: dedicated
+        # agent-invocation channel. Task tool invocations land here so "show
+        # me everything I asked the senior-engineer to do" is one
+        # channel-tail, not a grep across sesslog. Ships with
+        # `subtype_split=True` so per-agent files (`.agents-senior-engineer_*`,
+        # `.agents-help_*`, ...) materialize automatically as soon as agents
+        # fire, via the `_subtype_for_meta` extractor (subagent_type). This
+        # is the ONLY channel that defaults `subtype_split` to True — other
+        # channels stay single-file unless the user explicitly opts in.
         "agents": ChannelConfig(
             file_prefix=".agents_",
-            options=ChannelOptions(verbosity="full"),
+            options=ChannelOptions(verbosity="full", subtype_split=True),
         ),
     }
 
@@ -389,18 +397,17 @@ def _default_category_routes() -> dict[str, list[str]]:
 
 @dataclass
 class RoutingConfig:
-    """Log routing configuration."""
+    """Log routing configuration.
+
+    v0.3.7-pre (supersedes #48): subtype splitting is now a per-channel
+    opt-in via `ChannelOptions.subtype_split` instead of a category-wide
+    toggle. The legacy `routing.subtype_routing.<category>` key from
+    v0.3.3 #31 is REMOVED — any such key in user config is silently
+    ignored at merge time (no field on this dataclass for it to land on).
+    """
     channels: dict[str, ChannelConfig] = field(default_factory=_default_channels)
     category_routes: dict[str, list[str]] = field(default_factory=_default_category_routes)
     tool_overrides: dict[str, list[str]] = field(default_factory=dict)
-    # Subtype routing (v0.3.3, #31): per-category opt-in for splitting entries
-    # into per-subtype channels like .bash-powershell_*, .mcp-github_*, etc.
-    # Value can be:
-    #   False (default for all) -- no subtype split
-    #   True -- split for ALL subtypes encountered
-    #   list[str] -- split only for these specific subtypes
-    # Categories not present in this dict default to False.
-    subtype_routing: dict[str, "bool | list[str]"] = field(default_factory=dict)
 
 
 @dataclass
