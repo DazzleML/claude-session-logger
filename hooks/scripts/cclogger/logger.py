@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from cclogger.categorize import get_subtype
 from cclogger.debug import debug_log
-from cclogger.file_io import atomic_append, check_time_gap
+from cclogger.file_io import atomic_append, check_time_gap, migrate_overflow_files
 from cclogger.formatters import format_datetime, format_for_channel
 from cclogger.markers import (
     count_compaction_markers,
@@ -63,6 +63,14 @@ class SessionLogger:
         self._target_paths: dict[str, Path] = {}
         if self.effective_name:
             self._reconcile_files()
+
+        # Absorb any legacy `.overflow.N` files from prior versions into
+        # their main log files. Idempotent via sentinel marker; only
+        # scans the dir on first run after upgrade. Must run after
+        # `_reconcile_files` (so renames have stabilized) and before
+        # `_maybe_write_session_marker` (so markers land in the merged file).
+        if is_new_session_run(self.session.session_id):
+            migrate_overflow_files(self.session_dir)
 
         # Handle session start marker
         self._maybe_write_session_marker()
