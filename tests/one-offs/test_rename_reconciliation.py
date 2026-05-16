@@ -199,21 +199,6 @@ class TestReconcileSessionFilesEnumeration:
             "shell-bash" in n and "newname" in n for n in names
         ), f"shell-bash subtype not renamed: {names}"
 
-    def test_default_channel_names_preserves_legacy_behavior(self, tmp_path):
-        """When channel_names is None, falls back to legacy ['sesslog', 'shell', 'tasks']
-        for any internal caller that hasn't been updated."""
-        _make_log(tmp_path, "sesslog", "oldname")
-        _make_log(tmp_path, "shell", "oldname")
-        _make_log(tmp_path, "tasks", "oldname")
-        targets = reconcile_session_files(
-            tmp_path, SESSION_ID, "newname", SHELL, USER,
-            channel_names=None,
-        )
-        assert "sesslog" in targets
-        assert "shell" in targets
-        assert "tasks" in targets
-
-
 # ============================================================================
 # _embedded_session_name helper
 # ============================================================================

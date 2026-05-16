@@ -129,22 +129,18 @@ class SessionLogger:
         self._reconciled = True
 
     def _get_file_path(self, file_type: str) -> Path:
-        """Get the correct file path for a file type, using reconciled paths if available."""
-        key = f"{self.FILE_PREFIX}{file_type}"
+        """Resolve the write path for a base channel.
 
-        # Use reconciled path if available
+        Prefers the reconciled path (populated by `_reconcile_files` when
+        an effective_name is known). Falls back to building from channel
+        config for the unnamed-session case where reconciliation hasn't
+        run. Data-driven: any declared channel resolves the same way —
+        no special-case branches for shell/sesslog/tasks.
+        """
+        key = f"{self.FILE_PREFIX}{file_type}"
         if key in self._target_paths:
             return self._target_paths[key]
-
-        # Fall back to building path from session context (inside session directory)
-        if file_type == "shell":
-            return self.session_dir / f".{self.FILE_PREFIX}shell_{self.session.get_filename_context()}.log"
-        elif file_type == "sesslog":
-            return self.session_dir / f".{self.FILE_PREFIX}sesslog_{self.session.get_filename_context()}.log"
-        elif file_type == "tasks":
-            return self.session_dir / f".{self.FILE_PREFIX}tasks_{self.session.get_task_filename_context()}.log"
-        else:
-            raise ValueError(f"Unknown file type: {file_type}")
+        return self._get_channel_path(file_type)
 
     @property
     def shell_log_path(self) -> Path:
@@ -162,54 +158,50 @@ class SessionLogger:
         return self._get_file_path("tasks")
 
     def _get_channels_for_tool(self, tool_name: str, category: str) -> list[str]:
-        """Determine which channels a tool should write to based on routing config."""
-        # Check tool-specific override first
+        """Determine which channels a tool should write to based on routing config.
+
+        Resolution order: tool override → category route → `_default` route.
+        If the user has nuked `_default` from their config, route to nothing
+        rather than silently masking the omission with a hardcoded list.
+        """
         if tool_name in self.config.routing.tool_overrides:
             return self.config.routing.tool_overrides[tool_name]
-        # Fall back to category route
         if category in self.config.routing.category_routes:
             return self.config.routing.category_routes[category]
-        # Default route
-        return self.config.routing.category_routes.get("_default", ["shell", "sesslog"])
+        return self.config.routing.category_routes.get("_default", [])
 
     def _get_channel_path(self, channel_name: str) -> Path:
         """Get file path for a named channel.
 
         Supports two channel name shapes:
-          - "shell", "sesslog", "tools", etc. -- declared in routing.channels
-          - "<base>-<subtype>" (e.g., "bash-powershell") -- derived from a
-            subtype expansion at log time. The base channel must be declared;
-            the derived channel inherits its file_prefix with `-<subtype>`
-            appended before the trailing underscore.
+          - declared channel name (e.g., "shell", "sesslog", "tools", "tasks")
+            -- file_prefix comes from routing.channels[name].file_prefix
+          - "<base>-<subtype>" (e.g., "shell-bash", "agents-help") -- derived
+            from a subtype expansion at log time. The base channel must be
+            declared; the derived channel inherits its file_prefix with
+            `-<subtype>` appended before the trailing underscore.
+
+        All declared channels resolve the same way -- no special-case
+        branches for tasks/shell/sesslog. The filename context comes from
+        SessionContext.get_filename_context() universally; channel identity
+        is carried entirely by file_prefix.
         """
         channel = self.config.routing.channels.get(channel_name)
-        if not channel:
-            # Subtype channel? Format is "<base>-<subtype>"
-            if "-" in channel_name:
-                base_name, _, subtype = channel_name.partition("-")
-                base_channel = self.config.routing.channels.get(base_name)
-                if base_channel and subtype:
-                    # Derive filename: .<base>-<subtype>_<context>.log
-                    # base_channel.file_prefix is like ".bash_" -- strip
-                    # trailing underscore, append -<subtype>_
-                    base_prefix = base_channel.file_prefix.rstrip("_")
-                    derived_prefix = f"{base_prefix}-{subtype}_"
-                    if base_name == "tasks":
-                        filename = f"{derived_prefix}{self.session.get_task_filename_context()}.log"
-                    else:
-                        filename = f"{derived_prefix}{self.session.get_filename_context()}.log"
-                    return self.session_dir / filename
-            # Fall back to built-in file types
-            if channel_name in ("shell", "sesslog", "tasks"):
-                return self._get_file_path(channel_name)
-            raise ValueError(f"Unknown channel: {channel_name}")
-
-        # Use session context for filename
-        if channel_name == "tasks":
-            filename = f"{channel.file_prefix}{self.session.get_task_filename_context()}.log"
-        else:
+        if channel:
             filename = f"{channel.file_prefix}{self.session.get_filename_context()}.log"
-        return self.session_dir / filename
+            return self.session_dir / filename
+
+        # Subtype channel? Format is "<base>-<subtype>" -- inherit base prefix.
+        if "-" in channel_name:
+            base_name, _, subtype = channel_name.partition("-")
+            base_channel = self.config.routing.channels.get(base_name)
+            if base_channel and subtype:
+                base_prefix = base_channel.file_prefix.rstrip("_")
+                derived_prefix = f"{base_prefix}-{subtype}_"
+                filename = f"{derived_prefix}{self.session.get_filename_context()}.log"
+                return self.session_dir / filename
+
+        raise ValueError(f"Unknown channel: {channel_name}")
 
     def _maybe_write_session_marker(self) -> None:
         """Write session-start or compaction marker if this is first call of a new run.

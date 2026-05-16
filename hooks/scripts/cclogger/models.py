@@ -470,18 +470,6 @@ class SessionContext:
         else:
             return f"{self.shell_type}_{self.session_id}_{self.username}"
 
-    def get_task_filename_context(self) -> str:
-        """Generate task filename context.
-
-        Delegates to get_filename_context() to ensure naming consistency
-        across all channels. The channel prefix (.tasks_ vs .sesslog_)
-        provides file type differentiation.
-
-        Previously used __ (double underscore) before username which
-        diverged from build_filename() causing file proliferation (#15).
-        """
-        return self.get_filename_context()
-
 
 @dataclass
 class CommandContent:

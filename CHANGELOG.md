@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — v0.3.7 work in progress
 
+### Changed (Channels-as-Data hardening — dead-equivalent branches removed)
+- **`SessionContext.get_task_filename_context()` removed** (was an alias to `get_filename_context()` since the v0.2.x #15 fix unified task naming with all other channels). All three call sites in `cclogger/logger.py` now use `get_filename_context()` directly.
+- **`SessionLogger._get_file_path()` collapsed** from a 3-way `if file_type == "shell" / "sesslog" / "tasks"` chain to a generic `_target_paths`-or-`_get_channel_path` lookup. Any declared channel resolves the same way — file_prefix carries channel identity, the filename-context method is universal.
+- **`SessionLogger._get_channel_path()` lost its `("shell", "sesslog", "tasks")` fallback** (which would only fire if the user had nuked those channels from `routing.channels`, in which case raising `Unknown channel` is the honest outcome). Also lost its two `== "tasks"` branches that picked `get_task_filename_context()` over `get_filename_context()` (now identical).
+- **`SessionLogger._get_channels_for_tool()` no longer masks a missing `_default` route** with the hardcoded `["shell", "sesslog"]` backstop. If the user explicitly removes `_default` from their `category_routes`, we route to `[]` rather than silently honoring the wrong thing.
+- **`reconcile_session_files(channel_names=)` is now required** (was `Optional[list[str]] = None` with a `["sesslog", "shell", "tasks"]` fallback for the legacy enumeration). The only caller (`SessionLogger._reconcile_files`) has always passed the config-derived channel list since the #49 fix; the fallback was a backward-compat backstop with no live caller.
+- **Test removed**: `test_default_channel_names_preserves_legacy_behavior` in `test_rename_reconciliation.py` pinned the removed fallback.
+- Net: -40 LOC across 4 files (`logger.py`, `models.py`, `reconciliation.py`, `test_rename_reconciliation.py`). Snapshot byte-identical (15 log files). 331 tests pass (one removed). Pure dead-code removal; no behavioral change.
+
 ### Changed (BREAKING: per-channel subtype split opt-in; supersedes #48, Closes #49)
 - **CRITICAL: `routing.subtype_routing.<category>` config key REMOVED**: the v0.3.3 category-wide subtype-routing toggle is gone. It fired subtype-derived files (`.sesslog-bash`, `.tools-grep`, etc.) for every channel the category routed to, with no way to scope per-channel. Replaced by `routing.channels.<name>.options.subtype_split: bool | list[str]` (default `false` on every channel except `agents`).
 - **`ChannelOptions.subtype_split` field**: per-channel opt-in. `True` = split for any subtype the channel's traffic generates (e.g., `.shell-bash_*`, `.shell-grep_*` for the `shell` channel); `list[str]` (e.g., `["help", "senior-engineer"]`) = split only when the extracted subtype matches; `False` (default) = no split. Single-level only — `.agents-help_*` never chains to `.agents-help-bash_*`.

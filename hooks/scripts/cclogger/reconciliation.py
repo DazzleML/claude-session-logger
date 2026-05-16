@@ -453,7 +453,7 @@ def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
 
 def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: str,
                             shell: str, username: str,
-                            channel_names: Optional[list[str]] = None) -> dict[str, Path]:
+                            channel_names: list[str]) -> dict[str, Path]:
     """Reconcile all session files and return target paths.
 
     v0.3.7-pre (Bug B fix): enumerates every declared channel (passed in
@@ -469,11 +469,10 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
         session_name: Current session name
         shell: Shell type for filename construction
         username: Username
-        channel_names: List of declared channel names from
-            config.routing.channels.keys(). When None, defaults to the
-            legacy hardcoded list for backward compatibility with any
-            internal caller that hasn't been updated yet. New code should
-            always pass the config-derived list.
+        channel_names: List of declared channel names. Callers should pass
+            `list(config.routing.channels.keys())` so reconciliation covers
+            every channel the routing knows about. No backstop default --
+            data-driven only.
 
     Returns:
         Dict mapping `{prefix}{file_type}` to target Path for writing.
@@ -486,10 +485,6 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
         return {}  # Nothing to reconcile without a name
 
     targets: dict[str, Path] = {}
-
-    # Default to legacy set when caller hasn't been updated yet.
-    if channel_names is None:
-        channel_names = ["sesslog", "shell", "tasks"]
 
     # Discover any subtype-derived basenames present on disk so we can
     # rename them too. Base names that are already in `channel_names` are
