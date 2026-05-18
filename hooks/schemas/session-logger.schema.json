@@ -158,13 +158,16 @@
         },
         "tool_overrides": {
           "type": "object",
-          "description": "Override routing for specific tools (by exact tool name). Replaces category route entirely.",
+          "description": "Override routing for specific tools (by exact tool name). Replaces category route entirely. Defaults: TaskStop/TaskOutput are re-routed away from the tasks channel (they're process management for background subprocesses, not task-list operations -- they share the 'Task' prefix only by name).",
           "additionalProperties": {
             "type": "array",
             "items": {"type": "string"},
             "description": "Array of channel names"
           },
-          "default": {}
+          "default": {
+            "TaskStop": ["shell", "sesslog", "tools"],
+            "TaskOutput": ["shell", "sesslog", "tools"]
+          }
         },
         "mcp_server_routes": {
           "type": "object",

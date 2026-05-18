@@ -366,8 +366,11 @@ class TestConfigApplyOverride:
         assert target.routing.channels["convo"].enabled is False
         # category_routes preserved
         assert "meta" in target.routing.category_routes
-        # tool_overrides empty (default)
-        assert target.routing.tool_overrides == {}
+        # tool_overrides preserved at defaults (v0.3.7-pre #87: TaskStop/TaskOutput
+        # defaults route away from the tasks channel since they are process
+        # management, not task-list operations).
+        assert "TaskStop" in target.routing.tool_overrides
+        assert "TaskOutput" in target.routing.tool_overrides
 
     def test_combined_override_subtype_split_and_channel_options(self):
         """Realistic v0.3.7-pre sweep: per-channel subtype_split + options merge."""

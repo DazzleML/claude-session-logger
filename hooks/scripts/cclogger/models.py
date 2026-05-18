@@ -401,6 +401,35 @@ def _default_category_routes() -> dict[str, list[str]]:
     }
 
 
+def _default_tool_overrides() -> dict[str, list[str]]:
+    """Default per-tool routing overrides (v0.3.7-pre #87 follow-up).
+
+    Per-tool entries that REPLACE the category route entirely. Use this
+    when a tool's category route is wrong for the specific tool's
+    semantics, but a category move would over-correct other tools.
+
+    Defaults:
+      - TaskStop / TaskOutput: re-routed away from the `tasks` channel.
+        Empirically (verified against c:\\code-ext\\claude-code\\tools\\
+        TaskStopTool / TaskOutputTool) these are NOT task-list tools --
+        they're process management for background bash/agent
+        subprocesses (kill a running process; read its stdout). They
+        share the "Task" prefix only by name. Routing them to
+        `.tasks_*.log` confuses the plan-tracking channel with process
+        management. Keep them in shell/sesslog/tools (same as their
+        category default minus tasks).
+
+    Users can override via `~/.claude/plugins/settings/session-logger.json`:
+        {"routing": {"tool_overrides": {"TaskStop": ["shell", "tasks"]}}}
+    The per-key merge protocol applies -- setting an empty list clears
+    the override and falls back to the category route.
+    """
+    return {
+        "TaskStop": ["shell", "sesslog", "tools"],
+        "TaskOutput": ["shell", "sesslog", "tools"],
+    }
+
+
 def _default_mcp_server_routes() -> dict[str, list[str]]:
     """Default mcp_server_routes mapping (v0.3.7-pre #87).
 
@@ -437,7 +466,7 @@ class RoutingConfig:
     """
     channels: dict[str, ChannelConfig] = field(default_factory=_default_channels)
     category_routes: dict[str, list[str]] = field(default_factory=_default_category_routes)
-    tool_overrides: dict[str, list[str]] = field(default_factory=dict)
+    tool_overrides: dict[str, list[str]] = field(default_factory=_default_tool_overrides)
     mcp_server_routes: dict[str, list[str]] = field(default_factory=_default_mcp_server_routes)
 
 

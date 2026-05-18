@@ -251,3 +251,60 @@ class TestTodoWriteTaskContent:
         s = get_task_content("TaskCreate", raw_json)
         assert s.startswith("CREATE")
         assert "Test task" in s
+
+
+# ============================================================================
+# (4) TaskStop / TaskOutput default tool_overrides
+#     They share the "Task" prefix only by name -- empirically they're
+#     process management (kill bash subprocess, read stdout) not task-list
+#     operations. Default tool_overrides drop them from the tasks channel
+#     while keeping them in shell/sesslog/tools.
+# ============================================================================
+
+
+class TestTaskStopOutputDefaultOverrides:
+    def test_default_tool_overrides_drop_taskstop_from_tasks(self):
+        config = Config()
+        assert "TaskStop" in config.routing.tool_overrides
+        assert "tasks" not in config.routing.tool_overrides["TaskStop"]
+        assert config.routing.tool_overrides["TaskStop"] == ["shell", "sesslog", "tools"]
+
+    def test_default_tool_overrides_drop_taskoutput_from_tasks(self):
+        config = Config()
+        assert "TaskOutput" in config.routing.tool_overrides
+        assert "tasks" not in config.routing.tool_overrides["TaskOutput"]
+        assert config.routing.tool_overrides["TaskOutput"] == ["shell", "sesslog", "tools"]
+
+    def test_taskstop_routing_via_get_channels(self):
+        # End-to-end: TaskStop (category=task) is overridden away from tasks.
+        _, get_channels = _make_logger()
+        channels = get_channels("TaskStop", "task")
+        assert "tasks" not in channels
+        assert channels == ["shell", "sesslog", "tools"]
+
+    def test_taskoutput_routing_via_get_channels(self):
+        _, get_channels = _make_logger()
+        channels = get_channels("TaskOutput", "task")
+        assert "tasks" not in channels
+        assert channels == ["shell", "sesslog", "tools"]
+
+    def test_other_task_family_tools_still_route_to_tasks(self):
+        # Regression: TaskCreate/Update/List/Get unaffected -- they ARE
+        # task-list tools.
+        _, get_channels = _make_logger()
+        for tool_name in ("TaskCreate", "TaskUpdate", "TaskList", "TaskGet"):
+            channels = get_channels(tool_name, "task")
+            assert "tasks" in channels, f"{tool_name} should still route to tasks"
+
+    def test_user_can_override_default_taskstop_routing(self):
+        # User can restore TaskStop to tasks channel if they want by
+        # adding `tasks` to their override.
+        from cclogger.config_merge import apply_override_routing_config
+        config = Config()
+        apply_override_routing_config(
+            config.routing,
+            {"tool_overrides": {"TaskStop": ["shell", "sesslog", "tools", "tasks"]}},
+        )
+        _, get_channels = _make_logger(config)
+        channels = get_channels("TaskStop", "task")
+        assert "tasks" in channels
