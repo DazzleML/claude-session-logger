@@ -219,13 +219,18 @@ def main() -> None:
 
     # Get task content if applicable. Phase 2+3 Step 5 stuffs this into the
     # LogEntry's metadata so the `task-only` formatter can find it without
-    # log_entry() needing a special-case parameter.
+    # log_entry() needing a special-case parameter. v0.3.7-pre #87 extends
+    # this to the `todo` category (TodoWrite) so the tasks channel renders
+    # something useful for it too; raw_json is always stuffed so the
+    # task-only formatter's `get_task_content` fallback path can extract
+    # any task-shaped content if a tool from a non-task category is routed
+    # to the tasks channel (e.g., Todoist MCP via mcp_server_routes).
     tool_category = categorize_tool(tool_info.name)
-    if tool_category == "task":
+    entry.metadata["raw_json"] = tool_info.raw_json
+    if tool_category in ("task", "todo"):
         entry.metadata["task_content"] = get_task_content(
             tool_info.name, tool_info.raw_json, config
         )
-        entry.metadata["raw_json"] = tool_info.raw_json
 
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init

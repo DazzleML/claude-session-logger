@@ -152,18 +152,31 @@
           "default": {
             "_default": ["shell", "sesslog", "tools"],
             "task": ["shell", "sesslog", "tools", "tasks"],
+            "todo": ["shell", "sesslog", "tools", "tasks"],
             "unknown": ["sesslog", "unknowns"]
           }
         },
         "tool_overrides": {
           "type": "object",
-          "description": "Override routing for specific tools (by exact tool name)",
+          "description": "Override routing for specific tools (by exact tool name). Replaces category route entirely.",
           "additionalProperties": {
             "type": "array",
             "items": {"type": "string"},
             "description": "Array of channel names"
           },
           "default": {}
+        },
+        "mcp_server_routes": {
+          "type": "object",
+          "description": "Additive routing keyed by MCP server name (the '<server>' segment in 'mcp__<server>__<tool>'). When any tool from this server runs, its channels are unioned into the route from category_routes. Default routes Todoist (server 'todoai') to the tasks channel.",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Array of channel names to add for tools from this MCP server"
+          },
+          "default": {
+            "todoai": ["tasks"]
+          }
         }
       },
       "additionalProperties": false

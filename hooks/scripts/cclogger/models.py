@@ -370,6 +370,12 @@ def _default_category_routes() -> dict[str, list[str]]:
         # shell-history channel.
         "_default": ["shell", "sesslog", "tools"],
         "task": ["shell", "sesslog", "tools", "tasks"],
+        # TodoWrite belongs in the tasks channel alongside the Task* family
+        # (#87). `action_only.todo: True` is unchanged -- TodoWrite still
+        # logs in action-only mode by default; this just adds the tasks
+        # channel to its routing destination so all task-related ops land
+        # in one place.
+        "todo": ["shell", "sesslog", "tools", "tasks"],
         # Phase 2+3: io category (Read/Write/Edit/MultiEdit/NotebookEdit)
         # also routes to the opt-in `.fileio_*` channel for users who want
         # full file-operation content captured to disk. fileio is disabled
@@ -395,6 +401,25 @@ def _default_category_routes() -> dict[str, list[str]]:
     }
 
 
+def _default_mcp_server_routes() -> dict[str, list[str]]:
+    """Default mcp_server_routes mapping (v0.3.7-pre #87).
+
+    Maps MCP server name (the `mcp__<server>__<tool>` middle segment)
+    to a list of channels to add for any tool from that server. Additive
+    over the category route -- not a replacement. Use sparingly; broad
+    server-wide routing can pollute focused channels.
+
+    Default routes Todoist (`mcp__todoai__*`) to the `tasks` channel so
+    Todoist task operations land alongside Claude Code's Task* family.
+    Users can override per-server or add new server mappings in
+    `~/.claude/plugins/settings/session-logger.json` under
+    `routing.mcp_server_routes`.
+    """
+    return {
+        "todoai": ["tasks"],
+    }
+
+
 @dataclass
 class RoutingConfig:
     """Log routing configuration.
@@ -404,10 +429,16 @@ class RoutingConfig:
     toggle. The legacy `routing.subtype_routing.<category>` key from
     v0.3.3 #31 is REMOVED — any such key in user config is silently
     ignored at merge time (no field on this dataclass for it to land on).
+
+    v0.3.7-pre (#87): adds `mcp_server_routes` as an additive routing
+    primitive keyed by MCP server name. Lets users route all tools from
+    a given MCP server to extra channels (e.g., Todoist → tasks) without
+    enumerating every individual tool name in `tool_overrides`.
     """
     channels: dict[str, ChannelConfig] = field(default_factory=_default_channels)
     category_routes: dict[str, list[str]] = field(default_factory=_default_category_routes)
     tool_overrides: dict[str, list[str]] = field(default_factory=dict)
+    mcp_server_routes: dict[str, list[str]] = field(default_factory=_default_mcp_server_routes)
 
 
 @dataclass

@@ -314,6 +314,25 @@ def get_task_content(tool_name: str, raw_json: dict[str, Any],
         task_id = tool_input.get("taskId", "?")
         return f"GET: #{task_id}"
 
+    elif tool_name == "TodoWrite":
+        # #87: TodoWrite routed to tasks channel. Summarize the todo list
+        # with item counts by status and a preview of the first item.
+        todos = tool_input.get("todos", [])
+        if not isinstance(todos, list) or not todos:
+            return "TODOS: (empty)"
+        n = len(todos)
+        pending = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "pending")
+        in_progress = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "in_progress")
+        completed = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "completed")
+        first = todos[0] if isinstance(todos[0], dict) else {}
+        first_subj = first.get("content") or first.get("subject") or ""
+        if max_desc > 0 and len(first_subj) > max_desc:
+            first_subj = first_subj[:max_desc] + "..."
+        breakdown = f"{n} item(s) [{pending}p/{in_progress}ip/{completed}c]"
+        if first_subj:
+            return f"TODOS: {breakdown} first: {first_subj}"
+        return f"TODOS: {breakdown}"
+
     return tool_name
 
 

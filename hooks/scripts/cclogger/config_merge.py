@@ -218,6 +218,17 @@ def apply_override_routing_config(target: RoutingConfig, override: Any) -> None:
             if isinstance(channels_list, list):
                 target.tool_overrides[tool_name] = channels_list
 
+    # v0.3.7-pre (#87): mcp_server_routes is a dict[str, list[str]] keyed by
+    # MCP server name. Per-key replace (atomic value semantics, same as
+    # tool_overrides). Users can extend or override the default `todoai`
+    # mapping or add new ones; setting an empty list clears the server's
+    # additional routing.
+    mcp_routes = override.get("mcp_server_routes")
+    if isinstance(mcp_routes, dict):
+        for server_name, channels_list in mcp_routes.items():
+            if isinstance(channels_list, list):
+                target.mcp_server_routes[server_name] = channels_list
+
     # NOTE: v0.3.3 `subtype_routing` is removed in v0.3.7-pre (supersedes #48).
     # Subtype splitting is now per-channel via ChannelOptions.subtype_split.
     # Any `routing.subtype_routing` key in user config is silently ignored.

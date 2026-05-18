@@ -160,15 +160,35 @@ class SessionLogger:
     def _get_channels_for_tool(self, tool_name: str, category: str) -> list[str]:
         """Determine which channels a tool should write to based on routing config.
 
-        Resolution order: tool override → category route → `_default` route.
-        If the user has nuked `_default` from their config, route to nothing
-        rather than silently masking the omission with a hardcoded list.
+        Resolution order:
+          1. `tool_overrides[tool_name]` -- exact match, REPLACES everything
+             (highest precedence; user is being specific)
+          2. `category_routes[category]` -- category route (or `_default`
+             fallback if category is unknown; `[]` if the user has nuked
+             `_default` from their config)
+          3. `mcp_server_routes[server]` -- ADDITIVE for `mcp__<server>__*`
+             tools (v0.3.7-pre #87). Union the server's channels into the
+             route from step 2. Skipped when tool_overrides hit in step 1.
         """
         if tool_name in self.config.routing.tool_overrides:
             return self.config.routing.tool_overrides[tool_name]
+
         if category in self.config.routing.category_routes:
-            return self.config.routing.category_routes[category]
-        return self.config.routing.category_routes.get("_default", [])
+            channels = list(self.config.routing.category_routes[category])
+        else:
+            channels = list(self.config.routing.category_routes.get("_default", []))
+
+        if tool_name.startswith("mcp__"):
+            parts = tool_name.split("__", 2)
+            if len(parts) >= 2:
+                server = parts[1]
+                extra = self.config.routing.mcp_server_routes.get(server)
+                if extra:
+                    for ch in extra:
+                        if ch not in channels:
+                            channels.append(ch)
+
+        return channels
 
     def _get_channel_path(self, channel_name: str) -> Path:
         """Get file path for a named channel.
