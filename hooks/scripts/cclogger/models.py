@@ -292,6 +292,13 @@ def _default_channels() -> dict[str, ChannelConfig]:
                 "edit": {"max_chars": 20},
                 "multi-edit": {"max_chars": 20},
                 "notebook-edit": {"max_chars": 20},
+                # #87 P2a follow-up: TaskOutput's `tool_response.task.output`
+                # can be megabytes (long-running process stdout). Cap the
+                # sesslog preview so the kitchen-sink channel stays
+                # focused on "what was invoked" with enough output context
+                # for diagnostics. Full output lives in `tools-output`
+                # channel (opt-in) or the always-on transcript.jsonl.
+                "task-output": {"max_chars": 200},
             }),
         ),
         # .fileio_*: opt-in channel that captures FULL content of file I/O
@@ -303,6 +310,24 @@ def _default_channels() -> dict[str, ChannelConfig]:
         # rather than escaped single-line `\n`.
         "fileio": ChannelConfig(
             file_prefix=".fileio_",
+            enabled=False,
+            options=ChannelOptions(
+                verbosity="full",
+                newline_policy=NewlinePolicy.RENDER,
+            ),
+        ),
+        # .tools-output_*: opt-in channel that captures FULL process
+        # outputs from `TaskOutput` (stdout/stderr from backgrounded bash
+        # subprocesses or agent invocations). Disabled by default --
+        # most users want shell/tools to stay focused on "what commands
+        # were RUN", not "what they output". Enable when investigating
+        # what a long-running process is doing. Template pattern for
+        # any future "verbose content" channels (mirrors the .fileio_*
+        # design: opt-in, full verbosity, RENDER newlines so multi-line
+        # output reads naturally as a log stream rather than escaped
+        # single-line `\n` entries). #87 P2a.
+        "tools-output": ChannelConfig(
+            file_prefix=".tools-output_",
             enabled=False,
             options=ChannelOptions(
                 verbosity="full",
@@ -409,15 +434,22 @@ def _default_tool_overrides() -> dict[str, list[str]]:
     semantics, but a category move would over-correct other tools.
 
     Defaults:
-      - TaskStop / TaskOutput: re-routed away from the `tasks` channel.
-        Empirically (verified against c:\\code-ext\\claude-code\\tools\\
-        TaskStopTool / TaskOutputTool) these are NOT task-list tools --
-        they're process management for background bash/agent
-        subprocesses (kill a running process; read its stdout). They
-        share the "Task" prefix only by name. Routing them to
-        `.tasks_*.log` confuses the plan-tracking channel with process
-        management. Keep them in shell/sesslog/tools (same as their
-        category default minus tasks).
+      - TaskStop: re-routed away from the `tasks` channel but kept in
+        shell/sesslog/tools. Empirically (verified against c:\\code-ext\\
+        claude-code\\tools\\TaskStopTool) this is NOT a task-list tool --
+        it terminates a running background bash/agent subprocess (alias
+        for the deprecated KillShell). Conceptually `kill <pid>` -- fits
+        the .bash_history mental model of the shell channel; output is
+        small (status message). Routing to `.tasks_*.log` confused the
+        plan-tracking channel with process management.
+      - TaskOutput: re-routed away from BOTH the `tasks` and `shell`
+        channels. Reads stdout from a running background process
+        (`appState.tasks`); operates on Claude Code's runtime state, not
+        the OS shell. `TaskOutput task_id=42` isn't a runnable shell
+        command, and its output can be megabytes. Lands in `sesslog`
+        (200-char preview via per-role cap), `tools` (100-char snippet),
+        AND `tools-output` (full content, channel disabled by default
+        so it's a no-op unless the user opts in for forensic recovery).
 
     Users can override via `~/.claude/plugins/settings/session-logger.json`:
         {"routing": {"tool_overrides": {"TaskStop": ["shell", "tasks"]}}}
@@ -426,7 +458,7 @@ def _default_tool_overrides() -> dict[str, list[str]]:
     """
     return {
         "TaskStop": ["shell", "sesslog", "tools"],
-        "TaskOutput": ["shell", "sesslog", "tools"],
+        "TaskOutput": ["sesslog", "tools", "tools-output"],
     }
 
 

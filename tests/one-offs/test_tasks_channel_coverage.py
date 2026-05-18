@@ -267,13 +267,19 @@ class TestTaskStopOutputDefaultOverrides:
         config = Config()
         assert "TaskStop" in config.routing.tool_overrides
         assert "tasks" not in config.routing.tool_overrides["TaskStop"]
+        # TaskStop kept in shell (it's a kill command, fits .bash_history)
         assert config.routing.tool_overrides["TaskStop"] == ["shell", "sesslog", "tools"]
 
-    def test_default_tool_overrides_drop_taskoutput_from_tasks(self):
+    def test_default_tool_overrides_drop_taskoutput_from_tasks_AND_shell(self):
         config = Config()
         assert "TaskOutput" in config.routing.tool_overrides
         assert "tasks" not in config.routing.tool_overrides["TaskOutput"]
-        assert config.routing.tool_overrides["TaskOutput"] == ["shell", "sesslog", "tools"]
+        # TaskOutput dropped from shell too -- it's a runtime-state query
+        # not a runnable shell command, and its output can be megabytes.
+        assert "shell" not in config.routing.tool_overrides["TaskOutput"]
+        # Routed to tools (snippet) + sesslog (capped preview) + tools-output
+        # (full content, disabled by default so it's a no-op opt-in).
+        assert config.routing.tool_overrides["TaskOutput"] == ["sesslog", "tools", "tools-output"]
 
     def test_taskstop_routing_via_get_channels(self):
         # End-to-end: TaskStop (category=task) is overridden away from tasks.
@@ -286,7 +292,11 @@ class TestTaskStopOutputDefaultOverrides:
         _, get_channels = _make_logger()
         channels = get_channels("TaskOutput", "task")
         assert "tasks" not in channels
-        assert channels == ["shell", "sesslog", "tools"]
+        assert "shell" not in channels
+        # tools-output is included so users who opt-in (enabled=True) get
+        # full content captured to .tools-output_*; disabled-by-default
+        # means it's a no-op for users who don't care.
+        assert channels == ["sesslog", "tools", "tools-output"]
 
     def test_other_task_family_tools_still_route_to_tasks(self):
         # Regression: TaskCreate/Update/List/Get unaffected -- they ARE
@@ -308,3 +318,178 @@ class TestTaskStopOutputDefaultOverrides:
         _, get_channels = _make_logger(config)
         channels = get_channels("TaskStop", "task")
         assert "tasks" in channels
+
+    def test_user_can_restore_taskoutput_to_shell(self):
+        from cclogger.config_merge import apply_override_routing_config
+        config = Config()
+        apply_override_routing_config(
+            config.routing,
+            {"tool_overrides": {"TaskOutput": ["shell", "sesslog", "tools"]}},
+        )
+        _, get_channels = _make_logger(config)
+        channels = get_channels("TaskOutput", "task")
+        assert "shell" in channels
+
+
+# ============================================================================
+# (5) TaskOutput / TaskStop handler content extraction
+#     Previously the handlers returned only `task_id` -- per-channel
+#     verbosity had nothing to truncate. Now extract tool_response.task.output
+#     (TaskOutput) and tool_response.message (TaskStop) so the entry carries
+#     useful content that max_chars caps actually shape.
+# ============================================================================
+
+
+class TestTaskOutputContentExtraction:
+    def test_taskoutput_includes_output_from_tool_response(self):
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskOutput",
+            "tool_input": {"task_id": "42", "block": True},
+            "tool_response": {
+                "task": {
+                    "task_id": "42",
+                    "task_type": "local_bash",
+                    "status": "running",
+                    "output": "[next-dev] ready - started server on :3000",
+                },
+            },
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert "#42" in result.legacy_string
+        assert "next-dev" in result.legacy_string
+        assert "server on :3000" in result.legacy_string
+
+    def test_taskoutput_missing_output_falls_back_to_id_only(self):
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskOutput",
+            "tool_input": {"task_id": "7"},
+            "tool_response": {"task": {"task_id": "7", "status": "running"}},
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert result.legacy_string == "#7"
+
+    def test_taskoutput_missing_tool_response_falls_back_to_id_only(self):
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskOutput",
+            "tool_input": {"task_id": "99"},
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert result.legacy_string == "#99"
+
+    def test_taskstop_includes_message_from_tool_response(self):
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskStop",
+            "tool_input": {"task_id": "42"},
+            "tool_response": {
+                "message": "Task 42 stopped successfully",
+                "task_id": "42",
+                "task_type": "local_bash",
+            },
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert "#42" in result.legacy_string
+        assert "stopped successfully" in result.legacy_string
+
+    def test_taskstop_missing_message_falls_back_to_id_only(self):
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskStop",
+            "tool_input": {"task_id": "13"},
+            "tool_response": {},
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert result.legacy_string == "#13"
+
+    def test_taskoutput_provides_summary_template_for_per_channel_truncation(self):
+        # The template carries the {snippet} placeholder so DefaultFormatter
+        # can substitute a per-channel-truncated snippet (shell/tools get
+        # 100 chars; sesslog gets full). Without this, DefaultFormatter
+        # bypasses verbosity via the _legacy_complete shortcut.
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskOutput",
+            "tool_input": {"task_id": "42"},
+            "tool_response": {
+                "task": {"task_id": "42", "output": "[next-dev] long stdout..."},
+            },
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert result.summary_template is not None
+        assert "{snippet}" in result.summary_template
+        assert "#42" in result.summary_template
+        # raw_content is the actual output -- the snippet source
+        assert result.raw_content == "[next-dev] long stdout..."
+
+    def test_taskoutput_without_output_omits_template(self):
+        # If there's nothing to snippet, no template -- DefaultFormatter
+        # falls back to plain legacy_complete (correct for the empty case).
+        from cclogger.models import ToolInfo
+        from cclogger.formatters.legacy import get_command_content_structured
+        raw = {
+            "tool_name": "TaskOutput",
+            "tool_input": {"task_id": "7"},
+        }
+        tool_info = ToolInfo.from_json(raw)
+        result = get_command_content_structured(tool_info, None)
+        assert result.summary_template is None
+
+
+# ============================================================================
+# (6) tools-output channel (opt-in full process output capture)
+# ============================================================================
+
+
+class TestToolsOutputChannel:
+    """Pinned: .tools-output_* channel for full TaskOutput content (opt-in).
+
+    Template pattern for any "verbose-content" channel (mirrors fileio):
+    disabled by default + verbosity="full" + NewlinePolicy.RENDER for
+    multi-line readability.
+    """
+
+    def test_tools_output_channel_in_defaults(self):
+        config = Config()
+        assert "tools-output" in config.routing.channels
+        assert config.routing.channels["tools-output"].file_prefix == ".tools-output_"
+
+    def test_tools_output_disabled_by_default(self):
+        config = Config()
+        assert config.routing.channels["tools-output"].enabled is False
+
+    def test_tools_output_uses_full_verbosity_and_render(self):
+        from cclogger.models import NewlinePolicy
+        config = Config()
+        opts = config.routing.channels["tools-output"].options
+        assert opts.verbosity == "full"
+        assert opts.newline_policy == NewlinePolicy.RENDER
+
+    def test_taskoutput_routes_to_tools_output(self):
+        _, get_channels = _make_logger()
+        channels = get_channels("TaskOutput", "task")
+        assert "tools-output" in channels
+
+    def test_sesslog_per_role_dict_caps_task_output_at_200(self):
+        # The sesslog verbosity dict gains a `task-output` entry capped
+        # at 200 chars so long process stdout doesn't blow up the
+        # kitchen-sink channel. Full content goes to tools-output (opt-in).
+        config = Config()
+        verbosity = config.routing.channels["sesslog"].options.verbosity
+        assert isinstance(verbosity, dict)
+        assert "task-output" in verbosity
+        assert verbosity["task-output"] == {"max_chars": 200}

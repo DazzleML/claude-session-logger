@@ -558,11 +558,33 @@ def get_command_content_structured(
         return CommandContent(raw_content="", legacy_string="", summary_template=None)
 
     elif tool_info.name == "TaskOutput":
-        s = tool_input.get("task_id", "")
+        # #87 follow-up: extract tool_response.task.output AND emit a
+        # `{snippet}` template so per-channel max_chars actually applies.
+        # Without the template, DefaultFormatter takes the legacy_complete
+        # bypass at default.py:60-62 -- no truncation, sesslog and tools
+        # produce byte-identical output. With the template, the snippet
+        # portion is truncated per channel while `#{task_id} -> ` prefix
+        # stays intact for identification.
+        task_id = tool_input.get("task_id", "")
+        response_task = (tool_info.raw_json.get("tool_response") or {}).get("task") or {}
+        output = response_task.get("output", "")
+        if output:
+            template = f"#{task_id} -> {{snippet}}"
+            legacy = f"#{task_id} -> {output}"
+            return CommandContent(raw_content=output, legacy_string=legacy, summary_template=template)
+        s = f"#{task_id}"
         return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name == "TaskStop":
-        s = tool_input.get("task_id", "")
+        # #87 follow-up: include tool_response.message so the entry shows
+        # outcome (e.g., "Task 42 stopped successfully"), not just the id.
+        task_id = tool_input.get("task_id", "")
+        response = tool_info.raw_json.get("tool_response") or {}
+        message = response.get("message", "")
+        if message:
+            s = f"#{task_id} | {message}"
+        else:
+            s = f"#{task_id}"
         return CommandContent(raw_content=s, legacy_string=s, summary_template=None)
 
     elif tool_info.name in ("tool_search_tool_regex", "tool_search_tool_bm25"):

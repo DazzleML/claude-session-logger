@@ -138,7 +138,8 @@
             "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
             "tasks": {"file_prefix": ".tasks_", "enabled": true},
             "unknowns": {"file_prefix": ".unknowns_", "enabled": true},
-            "tools": {"file_prefix": ".tools_", "enabled": true}
+            "tools": {"file_prefix": ".tools_", "enabled": true},
+            "tools-output": {"file_prefix": ".tools-output_", "enabled": false}
           }
         },
         "category_routes": {
@@ -166,7 +167,7 @@
           },
           "default": {
             "TaskStop": ["shell", "sesslog", "tools"],
-            "TaskOutput": ["shell", "sesslog", "tools"]
+            "TaskOutput": ["sesslog", "tools", "tools-output"]
           }
         },
         "mcp_server_routes": {
