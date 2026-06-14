@@ -1,7 +1,9 @@
 """Debug logging + dazzle-filekit auto-install + unknown-tool warning throttle.
 
-Foundation module — depends only on stdlib. Other cclogger modules import
-debug_log from here. _ensure_dazzle_filekit() is invoked once by
+Foundation module — depends only on stdlib + cclogger.paths (itself
+stdlib-only, so no import cycle even though __init__ loads debug first).
+Other cclogger modules import debug_log from here. _ensure_dazzle_filekit()
+is invoked once by
 cclogger/__init__.py so that downstream modules can `from dazzle_filekit
 import ...` without each one bootstrapping the install.
 """
@@ -14,6 +16,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from cclogger import paths
+
 
 def _ensure_dazzle_filekit():
     """Auto-install dazzle-filekit if missing (e.g. running inside a venv)."""
@@ -24,7 +28,7 @@ def _ensure_dazzle_filekit():
         pass
 
     # Avoid retrying on every hook call if install previously failed
-    sentinel = Path.home() / ".claude" / "logs" / ".dazzle_filekit_install_failed"
+    sentinel = paths.logs() / ".dazzle_filekit_install_failed"
     if sentinel.exists():
         # Check age -- retry after 1 hour in case issue was transient
         try:
@@ -68,20 +72,20 @@ def _ensure_dazzle_filekit():
         raise ImportError("Failed to auto-install dazzle-filekit")
 
 
-# Debug logging - use persistent location under ~/.claude
-DEBUG_LOG = Path.home() / ".claude" / "logs" / "hook-debug.log"
+# Debug logging - persistent location under the (possibly relocated) Claude dir
+DEBUG_LOG = paths.logs() / "hook-debug.log"
 
 # Throttle directory for "unknown tool encountered" warnings. Each unknown
 # tool name gets a sentinel file on first sighting; subsequent invocations
 # (across hook subprocesses, not just within one process) skip the warning.
 # Delete the directory or individual sentinels to re-trigger warnings.
-UNKNOWN_TOOL_WARN_DIR = Path.home() / ".claude" / "logs" / ".unknown_tool_warnings"
+UNKNOWN_TOOL_WARN_DIR = paths.logs() / ".unknown_tool_warnings"
 # Phase 2+3 Step 10: parallel sentinel directory for unknown role names.
 # When a LogEntry's role is not in the closed ROLES enum, formatters render
 # it as `??:<role>` (visible in logs) AND emit a one-time debug-log warning
 # via this helper. Sibling directory keeps the unknown-tool and unknown-role
 # warning streams independent.
-UNKNOWN_ROLE_WARN_DIR = Path.home() / ".claude" / "logs" / ".unknown_role_warnings"
+UNKNOWN_ROLE_WARN_DIR = paths.logs() / ".unknown_role_warnings"
 
 
 def _warn_unknown_tool_once(tool_name: str, fields: list[str]) -> None:

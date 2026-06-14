@@ -28,6 +28,7 @@ from pathlib import Path
 # the package is still empty.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from cclogger import paths
 from cclogger.categorize import categorize_tool
 from cclogger.config import ConfigLoader
 from cclogger.conversation import handle_conversation_event
@@ -112,7 +113,7 @@ def main() -> None:
     # writes a fresh SESSION START marker with correct run number
     # (fixes #9 - session resume detection)
     if hook_event_name == "SessionStart":
-        state_dir = Path.home() / ".claude" / "session-states"
+        state_dir = paths.session_states()
         state_dir.mkdir(parents=True, exist_ok=True)
         source = json_input.get("source", "unknown")
         # Clear .started flag so marker gets written
@@ -151,7 +152,7 @@ def main() -> None:
     is_tool_hook = hook_event_name in ("PostToolUse", "PreToolUse", "PostToolUseFailure")
 
     # Create sesslog directory structure (needed for state file)
-    sesslog_base = Path.home() / ".claude" / "sesslogs"
+    sesslog_base = paths.sesslogs()
     sesslog_base.mkdir(parents=True, exist_ok=True)
 
     # Get or create session directory

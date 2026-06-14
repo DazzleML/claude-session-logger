@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from cclogger import paths
 from cclogger.config_merge import apply_override_config, parse_bool
 from cclogger.debug import debug_log
 from cclogger.models import Config
@@ -50,9 +51,8 @@ def load_configuration(session_context: str) -> Config:
 
     Priority: Environment Variables > Session Config > Global Config > Defaults
     """
-    home = Path.home()
-    global_config_path = home / ".claude" / "claude-history.json"
-    session_config_path = home / ".claude" / f"claude-history-{session_context}.json"
+    global_config_path = paths.global_config()
+    session_config_path = paths.session_config(session_context)
 
     # Load and merge config files
     global_config = load_config_file(global_config_path)
@@ -186,7 +186,7 @@ class ConfigLoader:
     A debug-log warning fires if both exist (the single file is ignored).
     """
 
-    CONFIG_DIR = Path.home() / ".claude" / "plugins" / "settings"
+    CONFIG_DIR = paths.plugins_settings()
     CONFIG_FILE = CONFIG_DIR / "session-logger.json"
     CONFIG_SUBDIR = CONFIG_DIR / "session-logger"  # Per-channel layout
 

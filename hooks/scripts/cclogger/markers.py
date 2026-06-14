@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from cclogger import paths
 from cclogger.file_io import atomic_append
 
 
@@ -58,7 +59,7 @@ def get_run_number(session_id: str, file_path: Path) -> int:
     Uses cache for performance within a session run,
     falls back to counting markers in file (always authoritative).
     """
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     cache_file = state_dir / f"{session_id}.run"
 
     # Fast path: cache exists
@@ -83,14 +84,14 @@ def get_run_number(session_id: str, file_path: Path) -> int:
 
 def is_new_session_run(session_id: str) -> bool:
     """Check if this is the first tool call of a new session run."""
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     flag_file = state_dir / f"{session_id}.started"
     return not flag_file.exists()
 
 
 def mark_session_started(session_id: str) -> None:
     """Mark that this session run has been started (marker written)."""
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     state_dir.mkdir(parents=True, exist_ok=True)
     flag_file = state_dir / f"{session_id}.started"
     try:

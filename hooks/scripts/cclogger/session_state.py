@@ -17,6 +17,7 @@ from typing import Optional
 
 from dazzle_filekit import normalize_cross_platform_path, create_symlink
 
+from cclogger import paths
 from cclogger.debug import debug_log
 from cclogger.models import SessionContext, ToolInfo
 from cclogger.session_naming import get_session_name
@@ -50,7 +51,7 @@ def write_session_state(
     This enables commands (like /renameAI) to access session context
     that is only authoritatively available to hooks.
     """
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     state_dir.mkdir(parents=True, exist_ok=True)
     state_file = state_dir / f"{session_id}.json"
 
@@ -85,7 +86,7 @@ def write_session_state(
 
 def read_session_state(session_id: str) -> Optional[dict]:
     """Read session state from ~/.claude/session-states/{session_id}.json."""
-    state_file = Path.home() / ".claude" / "session-states" / f"{session_id}.json"
+    state_file = paths.session_states() / f"{session_id}.json"
     if state_file.exists():
         try:
             return json.loads(state_file.read_text())

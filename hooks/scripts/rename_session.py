@@ -12,6 +12,7 @@ This script:
 """
 
 import json
+import os
 import sys
 import re
 from datetime import datetime, timezone
@@ -24,6 +25,20 @@ try:
 except ImportError:
     HAS_FILEKIT = False
     import shutil
+
+
+def _claude_dir() -> Path:
+    """Claude data directory, honoring relocation.
+
+    Mirrors ``cclogger.paths.claude_dir()`` (precedence
+    ``CLAUDE_DIR > CLAUDE_CONFIG_DIR > ~/.claude``). This standalone utility
+    deliberately does NOT import the cclogger package -- doing so would
+    trigger its dazzle-filekit auto-install bootstrap -- so it carries its
+    own copy of the resolver, the same way csb's backup-hook.py does. Keep
+    in sync with cclogger/paths.py.
+    """
+    env = os.environ.get("CLAUDE_DIR") or os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(env).expanduser() if env else Path.home() / ".claude"
 
 
 def sanitize_session_name(name: str, max_words: int = 10) -> str:
@@ -173,7 +188,7 @@ def clear_session_caches(session_id: str) -> None:
         # Legacy location (will be migrated in log-command.py)
         Path(f"/tmp/claude-session-name-{session_id}"),
         # New location within session-states
-        Path.home() / ".claude" / "session-states" / f"{session_id}.name-cache",
+        _claude_dir() / "session-states" / f"{session_id}.name-cache",
     ]
 
     for cache_file in cache_locations:
@@ -203,7 +218,7 @@ def main():
     print()
 
     # Read session state
-    state_file = Path.home() / ".claude" / "session-states" / f"{session_id}.json"
+    state_file = _claude_dir() / "session-states" / f"{session_id}.json"
     if not state_file.exists():
         print(f"Error: Session state file not found: {state_file}")
         print("Make sure the hook has run at least once for this session.")

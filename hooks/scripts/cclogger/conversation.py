@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cclogger import paths
 from cclogger.debug import debug_log
 from cclogger.logger import SessionLogger
 from cclogger.models import Config, LogEntry, SessionContext
@@ -30,7 +31,7 @@ from cclogger.models import Config, LogEntry, SessionContext
 # byte offset into the transcript JSONL. Resets to 0 if cursor missing or
 # transcript shrinks (Claude Code rotation/compaction).
 def _convo_cursor_path(session_id: str) -> Path:
-    return Path.home() / ".claude" / "session-states" / f"{session_id}.convo-cursor"
+    return paths.session_states() / f"{session_id}.convo-cursor"
 
 
 def _read_convo_cursor(session_id: str) -> int:

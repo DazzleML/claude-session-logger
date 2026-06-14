@@ -16,6 +16,7 @@ from typing import Optional
 
 from dazzle_filekit import normalize_cross_platform_path
 
+from cclogger import paths
 from cclogger.debug import debug_log
 
 
@@ -32,7 +33,7 @@ def get_session_name(session_id: str, transcript_path: str) -> Optional[str]:
     Cache is updated when a name is found, but never used to short-circuit
     the transcript check (to ensure renames are detected immediately).
     """
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     cache_file = state_dir / f"{session_id}.name-cache"
     session_name = None
 
@@ -229,7 +230,7 @@ def apply_auto_name_on_session_start(
         return None
 
     # Store in cache file so subsequent hooks pick it up
-    state_dir = Path.home() / ".claude" / "session-states"
+    state_dir = paths.session_states()
     state_dir.mkdir(parents=True, exist_ok=True)
     cache_file = state_dir / f"{session_id}.name-cache"
 

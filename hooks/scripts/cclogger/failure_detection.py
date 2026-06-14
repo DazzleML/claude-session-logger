@@ -14,6 +14,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from cclogger import paths
 from cclogger.formatters import format_datetime, should_use_action_only
 from cclogger.logger import SessionLogger
 from cclogger.models import Config, ToolInfo
@@ -39,7 +40,7 @@ def detect_and_log_failure(
         return
 
     # Look for pre-captured command data
-    capture_dir = Path.home() / ".claude" / "captures"
+    capture_dir = paths.captures()
     capture_file = None
 
     if capture_dir.exists():

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from cclogger import paths
 from cclogger.categorize import get_subtype
 from cclogger.debug import debug_log
 from cclogger.file_io import (
@@ -52,7 +53,7 @@ class SessionLogger:
         self.config = config
         self.session = session
         self.event_time = event_time
-        self.sesslog_base = Path.home() / ".claude" / "sesslogs"
+        self.sesslog_base = paths.sesslogs()
         self.sesslog_base.mkdir(parents=True, exist_ok=True)
 
         # Get effective session name (from session or existing files/directories)
@@ -239,7 +240,7 @@ class SessionLogger:
 
         # Read source from state file (#14 - distinguish compaction from true start)
         source = None
-        source_file = Path.home() / ".claude" / "session-states" / f"{self.session.session_id}.source"
+        source_file = paths.session_states() / f"{self.session.session_id}.source"
         try:
             if source_file.exists():
                 source = source_file.read_text().strip()
