@@ -455,9 +455,19 @@ def _embedded_session_name(filename: str, session_id: str) -> Optional[str]:
     Files without an embedded name (unnamed-form) or that don't embed the
     GUID return None. Used by the sweep to identify orphans whose embedded
     name doesn't match the current session name.
+
+    Delimiter-collision fix (2026-08-12): shell-bits may contain hyphens
+    (tmux names embedding dates) and the name capture is GUID-anchored
+    lazy (`.+?`) so legacy `__`-containing names are recovered in full.
+    The previous `[^_]+?` capture returned a truncated-but-plausible name,
+    which made the sweep classify CORRECT files as orphans and quarantine
+    them into baks/.
     """
     escaped_id = re.escape(session_id)
-    pattern = re.compile(rf"^\.[\w-]+_[\w.]+__([^_]+?)(?:--\d{{3}})?__{escaped_id}_\w+(\.log)?$")
+    # Channel class deliberately excludes `_` (channel names never contain
+    # it) -- a greedy `[\w-]+` would swallow `{shell}__{name}` fragments
+    # and re-split the fields at the wrong boundary.
+    pattern = re.compile(rf"^\.[a-zA-Z0-9-]+_[\w.-]+?__(.+?)(?:--\d{{3}})?__{escaped_id}_\w+(\.log)?$")
     match = pattern.match(filename)
     if match:
         return match.group(1)

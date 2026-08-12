@@ -97,6 +97,23 @@ claude --plugin-dir /path/to/claude-session-logger
 
 ### Method 4: Manual Installation (Legacy)
 
+> [!WARNING]
+> **Do not combine this with Methods 1-3.** A manual install registers its own
+> `SessionStart` and `PostToolUse` entries in `~/.claude/settings.json`, and the
+> plugin registers its own hooks separately. Claude Code will run **both**, so every
+> event is logged twice and two copies of the logger — often at different versions —
+> compete over the same log filenames.
+>
+> Symptoms of a double install:
+> - Every entry appears twice in `.sesslog_*` / `.shell_*`
+> - `.tasks_*` files multiply with `--000`, `--001`, ... suffixes
+> - `~/.claude/logs/hook-debug.log` shows two `Hook event:` lines per tool call,
+>   milliseconds apart, with identical `JSON_INPUT length`
+>
+> If you previously installed manually and now want the plugin, follow
+> [Migrating from a manual install to the plugin](#migrating-from-a-manual-install-to-the-plugin)
+> **before** installing.
+
 Copy plugin files directly into your Claude config directory.
 
 #### Step 1: Copy hook scripts
@@ -154,6 +171,58 @@ Add the following to `~/.claude/settings.json`:
   }
 }
 ```
+
+---
+
+## Migrating from a manual install to the plugin
+
+If you ever used **Method 4** (or an older release that only offered manual
+installation), the plugin install will **not** remove your manual hooks — it cannot,
+because it does not own the `hooks` block in `~/.claude/settings.json`. Both loggers
+keep running until you remove the manual one by hand.
+
+**1. Check whether you have a manual install:**
+
+```bash
+grep -n 'log-command\.py\|run-hook\.mjs' ~/.claude/settings.json
+ls -la ~/.claude/hooks/log-command.py
+```
+
+Any hit means a manual install is still registered.
+
+**2. Remove the manual hook entries from `~/.claude/settings.json`.**
+
+Delete the `SessionStart` and `PostToolUse` entries that point at
+`~/.claude/hooks/log-command.py` (or `run-hook.mjs`). Keep any unrelated hooks.
+Back the file up first, and validate the result:
+
+```bash
+cp ~/.claude/settings.json ~/.claude/settings.json.bak
+# ...edit...
+python3 -c "import json; json.load(open('$HOME/.claude/settings.json')); print('VALID')"
+```
+
+**3. Archive the manual hook scripts** (move rather than delete, so you can roll back):
+
+```bash
+mkdir -p ~/.claude/hooks/_archived-manual-install
+mv ~/.claude/hooks/log-command.py    ~/.claude/hooks/_archived-manual-install/ 2>/dev/null
+mv ~/.claude/hooks/run-hook.mjs      ~/.claude/hooks/_archived-manual-install/ 2>/dev/null
+mv ~/.claude/hooks/rename_session.py ~/.claude/hooks/_archived-manual-install/ 2>/dev/null
+```
+
+**4. Verify only one logger runs.** Trigger a tool call, then:
+
+```bash
+grep "Hook event:" ~/.claude/logs/hook-debug.log | tail -6
+```
+
+Timestamps should be seconds apart. Two entries milliseconds apart with identical
+`JSON_INPUT length` means a duplicate registration is still active.
+
+> Since v0.3.0 the logger is a package (`hooks/scripts/cclogger/`) rather than a
+> single script, so a stale single-file `log-command.py` is not just redundant — it is
+> an old version with known bugs that were fixed in later releases.
 
 ---
 

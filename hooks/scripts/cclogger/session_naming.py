@@ -79,14 +79,18 @@ def get_session_name(session_id: str, transcript_path: str) -> Optional[str]:
         except Exception:
             pass
 
-    # Update cache with latest name (for debugging/inspection)
+    # Update cache with latest name (for debugging/inspection).
+    # The cache keeps the RAW name (user intent, display); only the
+    # returned, logger-facing value is collapsed for filename safety.
     if session_name:
         try:
             cache_file.write_text(session_name)
         except Exception:
             pass
 
-    return session_name
+    # `__` is the filename-format delimiter -- never let it escape into
+    # filename construction (see collapse_delimiter).
+    return collapse_delimiter(session_name) if session_name else None
 
 
 # Generic folder names that shouldn't become session names on their own
@@ -243,6 +247,23 @@ def apply_auto_name_on_session_start(
         return None
 
 
+def collapse_delimiter(value: str) -> str:
+    """Collapse runs of underscores to a single `_`.
+
+    `__` (double underscore) is the log-filename format's field delimiter
+    (`.{channel}_{shell}__{name}__{guid}_{user}.log`). If it appears INSIDE
+    the {shell} or {name} fields the grammar becomes unparseable, and the
+    rename/reconcile machinery corrupts filenames in a growth loop (the
+    2026-08-12 delimiter-collision bug: a session named
+    `2026-8-12__zeromeld.org__reddit-slack-fixes` gained a
+    `{shell}__{segment}__` insertion layer on every hook event).
+
+    Every value embedded in a filename field must pass through this
+    collapse; parses may then rely on `__` being structural.
+    """
+    return re.sub(r'_{2,}', '_', value)
+
+
 def sanitize_dirname(name: str, max_len: int = 200) -> str:
     """Sanitize session name for filesystem safety.
 
@@ -259,5 +280,7 @@ def sanitize_dirname(name: str, max_len: int = 200) -> str:
     safe = re.sub(r'[<>:"/\\|?*]', '_', name)
     # Also replace any control characters
     safe = re.sub(r'[\x00-\x1f]', '_', safe)
+    # Collapse the filename-format delimiter (see collapse_delimiter)
+    safe = collapse_delimiter(safe)
     # Truncate to max length
     return safe[:max_len]

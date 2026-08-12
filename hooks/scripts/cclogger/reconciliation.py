@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from cclogger.debug import debug_log
-from cclogger.session_naming import sanitize_dirname
+from cclogger.session_naming import collapse_delimiter, sanitize_dirname
 
 
 # ============================================================================
@@ -149,21 +149,39 @@ def _rename_files_for_session_change(directory: Path, old_session_name: Optional
 
         new_name = None
 
+        # Idempotency guard (delimiter-collision fix, 2026-08-12): if the
+        # NEW name is already embedded in its structural position, this
+        # file is already correct -- leave it alone. Without this guard a
+        # mis-parsed old/new pair substitutes new INSIDE an already-correct
+        # filename, growing it by one `{shell}__{segment}__` layer per hook
+        # event (observed live: 45 renames, filenames tripling in length).
+        already_named = rf"(?<=__){re.escape(new_session_name)}(?=(?:--\d{{3}})?__{escaped_id})"
+        if re.search(already_named, old_name):
+            continue
+
         if old_session_name:
             # Named -> Renamed: replace session name in its structural position
             # (between __ delimiters before GUID). Works for both base channels
             # (.sesslog_shell__OLD__guid_user.log) and subtype derivatives
             # (.shell-bash_shell__OLD__guid_user.log) identically.
             escaped_old = re.escape(old_session_name)
-            pattern = rf"(?<=__){escaped_old}(?=__{escaped_id})"
+            pattern = rf"(?<=__){escaped_old}(?=(?:--\d{{3}})?__{escaped_id})"
             if re.search(pattern, old_name):
-                new_name = re.sub(pattern, new_session_name, old_name)
+                new_name = re.sub(pattern, new_session_name.replace("\\", "\\\\"), old_name)
         else:
             # Unnamed -> Named: insert name before GUID. The leading
             # `.{channel}_{shell-bits}_` part is captured greedily before
             # `_{guid}_`, which works for both plain (.sesslog_) and
-            # subtype-derived (.shell-bash_) channel prefixes.
-            pattern = rf"^(\.[\w-]+_[\w.]+)_{escaped_id}_"
+            # subtype-derived (.shell-bash_) channel prefixes. Shell bits
+            # may contain hyphens (e.g. tmux names embedding dates).
+            #
+            # Guard: never insert into a file that already carries a
+            # `__{name}__{guid}` segment (named form). `\w` includes `_`,
+            # so without this the greedy shell-bits class swallows
+            # `__SomeName` and produces a malformed double-named file.
+            if re.search(rf"__.+__{escaped_id}", old_name):
+                continue
+            pattern = rf"^(\.[\w-]+_[\w.-]+)_{escaped_id}_"
             match = re.match(pattern, old_name)
             if match:
                 prefix = match.group(1)
@@ -218,8 +236,11 @@ def find_session_files(sesslog_dir: Path, session_id: str, prefix: str,
     #   .{prefix}{type}_{shell}_{guid}_{user}[.log]              (unnamed)
     #   .{prefix}{type}_{shell}__{name}__{guid}_{user}[.log]     (named)
     #   .{prefix}{type}_{shell}__{name}--NNN__{guid}_{user}[.log] (named with sequence)
+    # Channel prefix and GUID are the reliable anchors; {shell} and {name}
+    # are treated as opaque (shells may contain `_`/`-`, legacy names may
+    # contain `__`) -- delimiter-collision fix, 2026-08-12.
     pattern = re.compile(
-        rf"^\.{re.escape(prefix)}{re.escape(file_type)}_[^_]+_.*{re.escape(session_id)}_\w+(\.log)?$"
+        rf"^\.{re.escape(prefix)}{re.escape(file_type)}_.+{re.escape(session_id)}_\w+(\.log)?$"
     )
 
     matches = []
@@ -290,9 +311,17 @@ def has_sequence_number(filepath: Path) -> bool:
 
 
 def extract_session_name_from_file(filepath: Path, session_id: str) -> Optional[str]:
-    """Extract session name from an existing filename."""
+    """Extract session name from an existing filename.
+
+    GUID-anchored: the capture runs from the first `__` delimiter up to the
+    `__{guid}` anchor, so legacy names that themselves contain `__` (written
+    before the delimiter-collision fix collapsed them) are recovered in
+    full rather than truncated to their last underscore-free segment. A
+    truncated-but-plausible name here is what fed the rename feedback loop
+    (2026-08-12 delimiter-collision bug).
+    """
     # Pattern: __{NAME}__{guid} or __{NAME}--NNN__{guid}
-    pattern = re.compile(rf"__([^_]+?)(?:--\d{{3}})?__{re.escape(session_id)}")
+    pattern = re.compile(rf"__(.+?)(?:--\d{{3}})?__{re.escape(session_id)}")
     match = pattern.search(filepath.name)
     if match:
         return match.group(1)
@@ -325,7 +354,7 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
     extract the name from that directory to maintain continuity.
     """
     if session_name:
-        return session_name
+        return collapse_delimiter(session_name)
 
     # Check if any named directories exist for this session
     try:
@@ -339,14 +368,16 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
                     if match:
                         extracted = match.group(1)
                         debug_log(f"Using session name from existing directory: {extracted}")
-                        return extracted
+                        # Collapse legacy `__`-containing names so downstream
+                        # filename construction adopts the safe form.
+                        return collapse_delimiter(extracted)
 
                 # Also check files (for backward compatibility with flat files)
                 if item.is_file() and "__" in item.name:
                     extracted = extract_session_name_from_file(item, session_id)
                     if extracted:
                         debug_log(f"Using session name from existing file: {extracted}")
-                        return extracted
+                        return collapse_delimiter(extracted)
     except Exception:
         pass
 
@@ -436,8 +467,14 @@ def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
     if not sesslog_dir.exists():
         return set()
     escaped_id = re.escape(session_id)
-    # `[\w-]+` allows subtype-derived basenames like "shell-bash" or "agents-help".
-    pattern = re.compile(rf"^\.([\w-]+)_[\w.]+_.*{escaped_id}_\w+(\.log)?$")
+    # Basename class allows hyphens for subtype-derived names ("shell-bash",
+    # "agents-help") but deliberately EXCLUDES `_`: channel basenames never
+    # contain underscores, and a greedy `[\w-]+` (where `\w` includes `_`)
+    # swallows `{shell}__{name}` fragments and "discovers" multi-field blobs
+    # as basenames. Phase 2 then reconciles files INTO those blob names --
+    # the delimiter-collision growth loop (2026-08-12). Shell and name are
+    # opaque; the GUID is the trailing anchor.
+    pattern = re.compile(rf"^\.([a-zA-Z0-9-]+)_.+{escaped_id}_\w+(\.log)?$")
     basenames: set[str] = set()
     try:
         for f in sesslog_dir.iterdir():

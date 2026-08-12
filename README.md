@@ -50,6 +50,37 @@ claude plugin install session-logger@dazzle-claude-plugins
 
 For more options and troubleshooting, see the [Installation Guide](docs/installation.md).
 
+### Updating
+
+> **`claude plugin install` does not update an already-installed plugin.** It prints
+> `already installed`, exits 0, and leaves the version unchanged. That reads as
+> success, so it is easy to sit on a months-old version without realizing it.
+
+Use `claude plugin update`:
+
+```bash
+# Refresh the marketplace clone, then update the plugin
+claude plugin marketplace update dazzle-claude-plugins
+claude plugin update session-logger@dazzle-claude-plugins
+```
+
+Restart Claude Code to load the new version. To check what you are running:
+
+```bash
+claude plugin list
+```
+
+If you run Claude Code as more than one OS user (for example `root` as well as your
+own account), each has a separate `~/.claude/` tree and must be updated separately:
+
+```bash
+sudo -H claude plugin marketplace update dazzle-claude-plugins
+sudo -H claude plugin update session-logger@dazzle-claude-plugins
+```
+
+The `-H` matters — it points `HOME` at the target user's home so you update the
+intended config tree.
+
 ## Usage
 
 ### Automatic Session Logging

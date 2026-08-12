@@ -5,7 +5,95 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — v0.3.7 work in progress
+## [0.3.8] - 2026-08-12
+
+Delimiter-collision fix release: session names and tmux-derived shell strings
+containing `__` (the log-filename field delimiter) no longer corrupt filenames.
+Also realigns the published version metadata (previous `main` carried v0.3.7-pre
+code while still declaring 0.3.6, making new pushes invisible to
+`claude plugin update`).
+
+### Fixed
+- **Delimiter-collision filename growth loop** (live repro 2026-08-12): a session named
+  `2026-8-12__zeromeld.org__reddit-slack-fixes` in tmux session
+  `redditslack_2026-08-12_updating-users` gained a `{shell}__{segment}__` insertion
+  layer on nearly every hook event (45 renames observed; filenames tripling in length,
+  heading for the 255-char limit). Multiple compounding defects, each independently
+  covered by a mutation-verified test:
+  - `discover_channel_basenames()` captured the channel basename with a greedy `[\w-]+`
+    (`\w` includes `_`), so it "discovered" multi-field blobs like `convo_{shell}__{seg}`
+    as subtype basenames; Phase-2 reconciliation then renamed correct files INTO those
+    blob names — the growth-loop generator. The snapshot fixture (ordinary `__`-free
+    name) showed the same corruption: 8 stacked `tmux_` layers and 66 spurious artifacts
+    in a 25-event run. Basename class is now `[a-zA-Z0-9-]+` (channel names never
+    contain `_`), with shell/name treated as opaque and the GUID as the anchor.
+  - `extract_session_name_from_file()` (reconciliation.py) and `_embedded_session_name()`
+    (file_io.py — feeds the orphan sweep) used `__([^_]+?)__{guid}` parses that returned
+    a truncated-but-plausible name (`reddit-slack-fixes` instead of the full name),
+    feeding wrong old/new pairs into rename — and making the sweep classify CORRECT
+    files as orphans and quarantine them into `baks/`. Both are now GUID-anchored
+    non-truncating parses; the `_embedded_session_name` channel class also excludes `_`.
+  - `_rename_files_for_session_change()` had no idempotency guard: a mis-parsed old/new
+    pair substituted the new name INSIDE an already-correct filename (insertion, not
+    replacement). Now skips any file whose structural position already carries the new
+    name, and the unnamed->named branch refuses to touch files already in named form.
+  - The unnamed->named branch's shell field `[\w.]+` rejected hyphens, silently skipping
+    unnamed files whose shell embeds dates (e.g. `tmux_redditslack_2026-08-12_...`).
+    Now `[\w.-]+`. The named->renamed pattern also handles `--NNN` sequence files.
+- **`find_session_files()`** shell field `[^_]+` assumed underscore-free shells; now
+  channel-prefix + GUID anchored with shell/name opaque.
+- **`get_subtype()` emitted underscores into channel basenames** (found by adversarial
+  post-fix testing): a snake_case `subagent_type` (e.g. `my_snake_agent`) produced the
+  channel basename `agents-my_snake_agent`, which the (correctly `_`-free) discovery
+  parse mis-split as phantom basename `agents-my` — re-triggering the growth loop
+  (+1 `--NNN` file per hook event) through the third `_`-bearing field, reachable
+  out of the box since `agents` defaults to `subtype_split: True`. Subtype sanitizer
+  now maps illegal chars AND `_` to `-` (collapsing runs), enforcing the
+  "channel basenames never contain `_`" invariant end to end.
+
+### Known issues (pre-existing, deferred)
+- Session names longer than ~200 chars crash filename construction for the
+  per-context `claude-history-*.json` sidecar (`File name too long`), silently
+  disabling logging for that session (hook still exits 0). Predates this release;
+  needs a length cap at the filename-context level. Tracked for 0.3.9.
+
+### Added
+- **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied at
+  the filename-field sources: `sanitize_dirname()`, `get_session_name()` return (the
+  name-cache file keeps the RAW name for display), `build_session_context()` shell_type,
+  and `get_effective_session_name()` legacy-name recovery. With the delimiter
+  unrepresentable inside fields, every parse is correct by construction, and legacy
+  `__`-named directories/files are adopted (renamed to collapsed form) by the existing
+  rename machinery on their next session event.
+- **`tests/one-offs/test_delimiter_collision.py`**: 13 red-green tests built from the
+  live repro values — truncating-parse units, rename idempotency, sanitization,
+  hyphenated-shell handling, plus an end-to-end harness driving the real hook
+  subprocess across two simulated runs and asserting filename-set stability. All 8
+  fix components mutation-verified (each reverted individually -> specific test goes
+  red). Snapshot differential re-run post-fix: 15 files, byte-identical content,
+  zero spurious artifacts (baseline on unfixed code: 73 files, 66 of them corrupted).
+
+### Changed
+- **Version metadata realigned**: `version.py` + `.claude-plugin/plugin.json` +
+  `.claude-plugin/marketplace.json` now declare 0.3.8. The v0.3.7-pre relocation work
+  (below) ships in this release.
+- **`tests/one-offs/test_rename_corruption.py::test_old_limit_would_truncate`**: fixture
+  name contained `__`; expected value updated to the collapsed form (a delimiter-free
+  variant keeps the pure length assertion).
+
+### Documentation
+- **README "Updating" section**: `claude plugin install` is a no-op for an
+  already-installed plugin (prints `already installed`, exits 0) — document
+  `claude plugin marketplace update` + `claude plugin update` as the update path,
+  including multi-user (`sudo -H`) setups.
+- **`docs/installation.md`**: warning banner on Method 4 (manual install) about the
+  dual-install trap — plugin + manual hooks both registered means every event logged
+  twice and two logger versions fighting over filenames (observed live: 308-line
+  sesslog, 149 unique) — plus a "Migrating from a manual install to the plugin"
+  section with detection, removal, and single-fire verification steps.
+- **`settings.json.example`**: scoped to manual installs via `_comment`.
+
+## [0.3.7-pre] — 2026-06-14 (ships as part of 0.3.8)
 
 ### Fixed (Claude-dir relocation — containers / host-mounts / worktree isolation)
 - **The logger now follows a relocated Claude directory.** Every file it writes (`sesslogs/`, `session-states/`, `logs/`, `captures/`, `plugins/settings/`, and its own `claude-history*.json` config) was hard-coded to `~/.claude` in ~20 places, ignoring `CLAUDE_CONFIG_DIR` (Claude Code's own relocation variable). In a relocated setup the logger wrote to the home dir while Claude Code -- and its companion claude-session-backup -- used the relocated dir, silently splitting the data the two tools share. Resolution is now centralized in a new `cclogger/paths.py` with the precedence `CLAUDE_DIR > CLAUDE_CONFIG_DIR > ~/.claude` -- identical to csb, so the companion pair never drifts. No behavior change for the default (`~/.claude`) case.

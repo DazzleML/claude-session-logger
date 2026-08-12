@@ -20,7 +20,7 @@ from dazzle_filekit import normalize_cross_platform_path, create_symlink
 from cclogger import paths
 from cclogger.debug import debug_log
 from cclogger.models import SessionContext, ToolInfo
-from cclogger.session_naming import get_session_name
+from cclogger.session_naming import collapse_delimiter, get_session_name
 
 
 # ============================================================================
@@ -211,6 +211,10 @@ def build_session_context(tool_info: ToolInfo) -> SessionContext:
         shell_type = f"tmux_{tmux_session}"
     else:
         shell_type = detect_shell_type()
+
+    # tmux session names are user-controlled free text and may contain
+    # `__` -- the filename-format delimiter. Collapse before embedding.
+    shell_type = collapse_delimiter(shell_type)
 
     return SessionContext(
         shell_type=shell_type,

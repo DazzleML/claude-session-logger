@@ -135,8 +135,17 @@ def get_subtype(category: str, tool_name: str, raw_json: dict[str, Any]) -> Opti
     try:
         subtype = extractor(tool_name, raw_json)
         if subtype:
-            # Sanitize for filesystem safety
-            return re.sub(r"[^A-Za-z0-9_\-.]", "_", str(subtype))
+            # Sanitize for filesystem safety. Subtypes become part of the
+            # channel basename (`.agents-{subtype}_...`), and channel
+            # basenames must never contain `_` -- the filename parses
+            # (discover_channel_basenames, _embedded_session_name) rely on
+            # that invariant to split fields. A snake_case subagent_type
+            # like "my_snake_agent" would otherwise be mis-discovered as
+            # phantom basename "agents-my" and re-trigger the
+            # delimiter-collision growth loop (2026-08-12 fix).
+            safe = re.sub(r"[^A-Za-z0-9\-.]", "-", str(subtype))
+            safe = re.sub(r"-{2,}", "-", safe)
+            return safe
         return None
     except Exception:
         return None
