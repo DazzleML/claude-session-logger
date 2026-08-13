@@ -134,23 +134,11 @@ class TestSanitizeDirname:
         assert len(sanitize_dirname(name)) == 100
 
     def test_old_limit_would_truncate(self):
-        """51+ char name that was truncated by the old 50-char limit.
-
-        Updated for the delimiter-collision fix (2026-08-12): `__` inside a
-        name now collapses to `_` (it is the filename-format delimiter), so
-        the historical fixture's expected value is the collapsed form. A
-        delimiter-free variant keeps the pure length assertion.
-        """
+        """52-char name that was truncated by the old 50-char limit."""
         name = "CLAUDE-SESSION-LOGGER__testing-new-js-installer-pt2"
         assert len(name) == 51  # Was truncated at 50 by old limit
         result = sanitize_dirname(name)
-        assert result == "CLAUDE-SESSION-LOGGER_testing-new-js-installer-pt2", (
-            f"Truncated to: {result}")
-
-        # Delimiter-free 51-char name passes through completely untouched.
-        clean = "CLAUDE-SESSION-LOGGER-testing-new-js-installer-pt22"
-        assert len(clean) == 51
-        assert sanitize_dirname(clean) == clean
+        assert result == name, f"Truncated to: {result}"
 
     def test_respects_explicit_max_len(self):
         """Explicit max_len should be honored."""

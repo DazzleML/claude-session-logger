@@ -41,8 +41,10 @@ LIVE_SHELL = "tmux_redditslack_2026-08-12_updating-users"
 LIVE_NAME = "2026-8-12__zeromeld.org__reddit-slack-fixes"
 USER = "dev"
 
-# What the name should collapse to once `__` is banned from filename fields.
-COLLAPSED_NAME = "2026-8-12_zeromeld.org_reddit-slack-fixes"
+# v0.3.8 collapsed names too; scope narrowed (see delimiter-collapse-scope-
+# refinement doc): the NAME field is lossless -- only the machine-generated
+# shell field carries the no-`__` invariant.
+EXPECTED_NAME = LIVE_NAME
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 HOOK_SCRIPT = REPO_ROOT / "hooks" / "scripts" / "log-command.py"
@@ -154,18 +156,21 @@ class TestRenameIdempotency:
 # ============================================================================
 
 class TestDelimiterSanitization:
-    def test_sanitize_dirname_collapses_double_underscore(self):
+    def test_sanitize_dirname_preserves_double_underscore(self):
+        """Names are user-authored; `__` must survive so the on-disk name
+        round-trips into `claude --resume <name>`."""
         from cclogger.session_naming import sanitize_dirname
-        assert "__" not in sanitize_dirname(LIVE_NAME)
+        assert sanitize_dirname(LIVE_NAME) == LIVE_NAME
 
     def test_sanitize_dirname_preserves_single_underscores(self):
         from cclogger.session_naming import sanitize_dirname
         assert sanitize_dirname("a_b_c") == "a_b_c"
 
-    def test_get_session_name_returns_collapsed_name(self, tmp_path, monkeypatch):
-        """The name-cache may hold a raw `__` name (written by /rename);
-        the logger-facing accessor must return the collapsed form so every
-        downstream filename consumer is safe by construction."""
+    def test_get_session_name_returns_raw_name(self, tmp_path, monkeypatch):
+        """The name-cache holds the raw `__` name (written by /rename) and
+        the accessor must return it VERBATIM -- the grammar's boundaries are
+        the first `__` (shell, machine-generated and collapse-guaranteed)
+        and the `__{guid}` anchor, so the name needs no mutation."""
         monkeypatch.setenv("CLAUDE_DIR", str(tmp_path))
         state_dir = tmp_path / "session-states"
         state_dir.mkdir()
@@ -173,7 +178,7 @@ class TestDelimiterSanitization:
 
         from cclogger.session_naming import get_session_name
         got = get_session_name(GUID, str(tmp_path / "transcript.jsonl"))
-        assert got == COLLAPSED_NAME
+        assert got == LIVE_NAME
 
     def test_shell_type_collapses_tmux_delimiter(self, monkeypatch):
         """tmux session names are user-controlled free text and may contain
@@ -281,16 +286,36 @@ class TestEndToEndFilenameStability:
         assert len(chans) == len(set(chans)), f"duplicate channel files: {after_run1}"
         assert not any("--0" in n for n in after_run1), after_run1
 
-    def test_filenames_use_collapsed_name(self, scratch_home):
-        """New files must embed the collapsed (delimiter-free) name."""
+    def test_filenames_carry_raw_name(self, scratch_home):
+        """Files and dir embed the raw name verbatim -- name<->session
+        round-tripping (copy the name portion, `claude --resume <name>`)."""
         home, transcript = scratch_home
         _drive_hook(home, _events(transcript, n_tools=1))
         dirs = self._session_dirs(home)
         assert len(dirs) == 1
-        assert COLLAPSED_NAME in dirs[0].name and LIVE_NAME not in dirs[0].name, dirs[0].name
+        assert dirs[0].name.split(f"__{GUID}")[0] == LIVE_NAME, dirs[0].name
         for n in self._log_files(dirs[0]):
-            assert LIVE_NAME not in n, n
-            assert COLLAPSED_NAME in n, n
+            assert LIVE_NAME in n, n
+
+
+# ============================================================================
+# Orphan sweep: raw `__` names are NOT orphans
+# ============================================================================
+
+class TestSweepRawNames:
+    def test_sweep_does_not_quarantine_raw_name_files(self, tmp_path):
+        """A correctly-named file whose embedded name contains `__` must not
+        be classified as an orphan (the v0.1.x truncating parse did exactly
+        that, feeding baks/ with canonical files)."""
+        from cclogger.file_io import sweep_orphan_session_name_files
+        f = tmp_path / correct_filename()
+        f.write_text("payload")
+
+        moved = sweep_orphan_session_name_files(tmp_path, LIVE_NAME, GUID)
+
+        assert moved == 0, f"canonical raw-name file quarantined ({moved} moved)"
+        assert f.exists()
+        assert not (tmp_path / "baks").exists() or not any((tmp_path / "baks").iterdir())
 
 
 # ============================================================================

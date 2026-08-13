@@ -58,28 +58,30 @@ code while still declaring 0.3.6, making new pushes invisible to
   needs a length cap at the filename-context level. Tracked for 0.3.9.
 
 ### Added
-- **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied at
-  the filename-field sources: `sanitize_dirname()`, `get_session_name()` return (the
-  name-cache file keeps the RAW name for display), `build_session_context()` shell_type,
-  and `get_effective_session_name()` legacy-name recovery. With the delimiter
-  unrepresentable inside fields, every parse is correct by construction, and legacy
-  `__`-named directories/files are adopted (renamed to collapsed form) by the existing
-  rename machinery on their next session event.
-- **`tests/one-offs/test_delimiter_collision.py`**: 13 red-green tests built from the
-  live repro values — truncating-parse units, rename idempotency, sanitization,
-  hyphenated-shell handling, plus an end-to-end harness driving the real hook
-  subprocess across two simulated runs and asserting filename-set stability. All 8
-  fix components mutation-verified (each reverted individually -> specific test goes
-  red). Snapshot differential re-run post-fix: 15 files, byte-identical content,
-  zero spurious artifacts (baseline on unfixed code: 73 files, 66 of them corrupted).
+- **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied to
+  the **shell field only** (`build_session_context()` shell_type). The shell is
+  machine-generated (`tmux_{session-name}` or a shell binary), so keeping it `__`-free
+  costs nothing and gives the grammar an unambiguous left boundary. **Session names are
+  lossless**: the name field is user-authored and passes through verbatim -- `__` and
+  all -- preserving name<->session round-tripping (`claude --resume <name>` from a
+  copied dir name). Name parses need no collapse: they are bounded by the first `__`
+  (shell boundary) and the `__{guid}` anchor, resolving greedily toward the GUID, so
+  raw `__` inside names is recovered verbatim. (An earlier draft of this release also
+  collapsed names; scope was narrowed per the delimiter-collapse-scope-refinement
+  analysis -- constrain the machine-generated field, never user-authored data.)
+- **`tests/one-offs/test_delimiter_collision.py`**: 16 red-green tests built from the
+  live repro values — truncating-parse units, rename idempotency, lossless-name and
+  shell-collapse contracts, sweep no-quarantine for raw names, hyphenated-shell
+  handling, plus end-to-end harnesses driving the real hook subprocess across
+  simulated restarts asserting filename-set stability and raw-name round-tripping.
+  All fix components mutation-verified (each reverted individually -> specific test
+  goes red). Snapshot differential byte-identical post-fix (baseline on unfixed
+  code: 73 files, 66 of them corrupted, incl. 8 stacked tmux_ prefixes).
 
 ### Changed
 - **Version metadata realigned**: `version.py` + `.claude-plugin/plugin.json` +
   `.claude-plugin/marketplace.json` now declare 0.3.8. The v0.3.7-pre relocation work
   (below) ships in this release.
-- **`tests/one-offs/test_rename_corruption.py::test_old_limit_would_truncate`**: fixture
-  name contained `__`; expected value updated to the collapsed form (a delimiter-free
-  variant keeps the pure length assertion).
 
 ### Documentation
 - **README "Updating" section**: `claude plugin install` is a no-op for an

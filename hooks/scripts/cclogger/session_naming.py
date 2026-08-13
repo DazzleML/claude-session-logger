@@ -79,18 +79,17 @@ def get_session_name(session_id: str, transcript_path: str) -> Optional[str]:
         except Exception:
             pass
 
-    # Update cache with latest name (for debugging/inspection).
-    # The cache keeps the RAW name (user intent, display); only the
-    # returned, logger-facing value is collapsed for filename safety.
+    # Update cache with latest name (for debugging/inspection)
     if session_name:
         try:
             cache_file.write_text(session_name)
         except Exception:
             pass
 
-    # `__` is the filename-format delimiter -- never let it escape into
-    # filename construction (see collapse_delimiter).
-    return collapse_delimiter(session_name) if session_name else None
+    # The name is returned VERBATIM -- it is user-authored and must
+    # round-trip (`claude --resume <name>`). Only the machine-generated
+    # shell field carries the no-`__` invariant (see collapse_delimiter).
+    return session_name
 
 
 # Generic folder names that shouldn't become session names on their own
@@ -251,15 +250,20 @@ def collapse_delimiter(value: str) -> str:
     """Collapse runs of underscores to a single `_`.
 
     `__` (double underscore) is the log-filename format's field delimiter
-    (`.{channel}_{shell}__{name}__{guid}_{user}.log`). If it appears INSIDE
-    the {shell} or {name} fields the grammar becomes unparseable, and the
-    rename/reconcile machinery corrupts filenames in a growth loop (the
-    2026-08-12 delimiter-collision bug: a session named
-    `2026-8-12__zeromeld.org__reddit-slack-fixes` gained a
-    `{shell}__{segment}__` insertion layer on every hook event).
+    (`.{channel}_{shell}__{name}__{guid}_{user}.log`). Applied to the
+    SHELL field only (build_session_context): the shell is machine-
+    generated (`tmux_{session-name}` or a shell binary name), so keeping
+    it `__`-free costs nothing and gives the grammar an unambiguous left
+    boundary -- the first `__` always ends the shell field.
 
-    Every value embedded in a filename field must pass through this
-    collapse; parses may then rely on `__` being structural.
+    The NAME field is deliberately EXEMPT: it is user-authored semantic
+    content, and mutating it breaks name<->session round-tripping
+    (`claude --resume <name>` from a copied dir name). Name parses do not
+    need the collapse: they are bounded by the first `__` on the left and
+    the `__{guid}` anchor on the right, and resolve greedily toward the
+    GUID -- so raw `__` inside a name is recovered verbatim. (v0.3.8
+    collapsed names too; the scope was narrowed after the 2026-08-12
+    delimiter-collapse-scope-refinement analysis.)
     """
     return re.sub(r'_{2,}', '_', value)
 
@@ -280,7 +284,5 @@ def sanitize_dirname(name: str, max_len: int = 200) -> str:
     safe = re.sub(r'[<>:"/\\|?*]', '_', name)
     # Also replace any control characters
     safe = re.sub(r'[\x00-\x1f]', '_', safe)
-    # Collapse the filename-format delimiter (see collapse_delimiter)
-    safe = collapse_delimiter(safe)
     # Truncate to max length
     return safe[:max_len]

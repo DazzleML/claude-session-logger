@@ -354,7 +354,7 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
     extract the name from that directory to maintain continuity.
     """
     if session_name:
-        return collapse_delimiter(session_name)
+        return session_name
 
     # Check if any named directories exist for this session
     try:
@@ -368,16 +368,14 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
                     if match:
                         extracted = match.group(1)
                         debug_log(f"Using session name from existing directory: {extracted}")
-                        # Collapse legacy `__`-containing names so downstream
-                        # filename construction adopts the safe form.
-                        return collapse_delimiter(extracted)
+                        return extracted
 
                 # Also check files (for backward compatibility with flat files)
                 if item.is_file() and "__" in item.name:
                     extracted = extract_session_name_from_file(item, session_id)
                     if extracted:
                         debug_log(f"Using session name from existing file: {extracted}")
-                        return collapse_delimiter(extracted)
+                        return extracted
     except Exception:
         pass
 
