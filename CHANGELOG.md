@@ -4,6 +4,13 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.12] - 2026-08-13
+
+Dev-tooling reorganization; no runtime changes.
+
+### Changed
+- **`scripts-repo/` reorganized**: the git-repokit-common subtree now lives at `scripts-repo/repokit-common/` (30 files moved; future pulls use `--prefix=scripts-repo/repokit-common`), with project-local tooling staying at `scripts-repo/local/` as its sibling — upstream vs local is now visible in the tree itself. The `scripts-repo` top-level name is retained for continuity: it originated as precautionary naming hygiene against the plugin docs' illustrated `scripts/` example layout (2026-01-29 analysis) -- a 2026-08-13 trace confirmed Claude Code's installer does whole-repo copying with no special `scripts/` handling, so the name is convention, not necessity. Living docs/invocations updated; historical checklists left as records.
+
 ## [0.3.11] - 2026-08-13
 
 The agents channel becomes what its name promises: each `.agents-<type>_*` file is now the complete story of that agent. Verified by 30 new tests, an 11-mutation kill matrix, an independent tester pass, a live smoke on the development box itself, and a byte-identical snapshot for agent-free sessions.

@@ -130,11 +130,12 @@ claude-session-logger/
 ├── commands/                 # Plugin commands
 │   ├── renameAI.md
 │   └── sessioninfo.md
-├── scripts-repo/             # Git subtree from DazzleTools/git-repokit-common
-│   ├── hooks/                # Git hooks (pre-commit, etc.)
-│   ├── install-hooks.sh
-│   ├── sync-versions.py      # Version sync (configured via pyproject.toml)
-│   ├── update-version.sh     # Legacy version string updater
+├── scripts-repo/             # Dev tooling (name avoids the plugin system's scripts/ handling)
+│   ├── repokit-common/       # Git subtree from DazzleTools/git-repokit-common
+│   │   ├── hooks/            # Git hooks (pre-commit, etc.)
+│   │   ├── install-hooks.sh
+│   │   ├── sync-versions.py  # Version sync (configured via pyproject.toml)
+│   │   └── ...               # issue/backlink/sesslog tooling
 │   └── local/                # Project-local tooling (not from upstream)
 │       ├── audit_codebase.py    # git-commit function-diff tool
 │       ├── dev-refresh.py       # Clear plugin cache during development

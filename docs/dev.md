@@ -66,46 +66,46 @@ The `sync-versions.py` script keeps everything in sync:
 
 ```bash
 # Check if versions are synchronized
-python scripts-repo/sync-versions.py --check
+python scripts-repo/repokit-common/sync-versions.py --check
 
 # Bump patch version (0.1.4 -> 0.1.5)
-python scripts-repo/sync-versions.py --bump patch
+python scripts-repo/repokit-common/sync-versions.py --bump patch
 
 # Bump minor version (0.1.4 -> 0.2.0)
-python scripts-repo/sync-versions.py --bump minor
+python scripts-repo/repokit-common/sync-versions.py --bump minor
 
 # Bump major version (0.1.4 -> 1.0.0) - requires confirmation
-python scripts-repo/sync-versions.py --bump major
+python scripts-repo/repokit-common/sync-versions.py --bump major
 
 # Demote patch version (0.1.4 -> 0.1.3)
-python scripts-repo/sync-versions.py --demote patch
+python scripts-repo/repokit-common/sync-versions.py --demote patch
 
 # Demote minor version (0.1.4 -> 0.0.0)
-python scripts-repo/sync-versions.py --demote minor
+python scripts-repo/repokit-common/sync-versions.py --demote minor
 
 # Set version directly (e.g., 0.1.4 -> 0.2.1)
-python scripts-repo/sync-versions.py --set 0.2.1
+python scripts-repo/repokit-common/sync-versions.py --set 0.2.1
 
 # Skip confirmation for major changes (use with caution)
-python scripts-repo/sync-versions.py --bump major --force
-python scripts-repo/sync-versions.py --set 2.0.0 --force
+python scripts-repo/repokit-common/sync-versions.py --bump major --force
+python scripts-repo/repokit-common/sync-versions.py --set 2.0.0 --force
 
 # Preview changes without modifying
-python scripts-repo/sync-versions.py --bump patch --dry-run
+python scripts-repo/repokit-common/sync-versions.py --bump patch --dry-run
 
 # Sync without updating git version string
-python scripts-repo/sync-versions.py --no-git-ver
+python scripts-repo/repokit-common/sync-versions.py --no-git-ver
 
 # Clear plugin cache for development testing (--dev-refresh)
-python scripts-repo/sync-versions.py --dev-refresh              # Clears target version
-python scripts-repo/sync-versions.py --set 0.1.4 --dev-refresh  # Clears 0.1.4
-python scripts-repo/sync-versions.py --dev-refresh 0.1.3 0.1.4  # Clears multiple versions
+python scripts-repo/repokit-common/sync-versions.py --dev-refresh              # Clears target version
+python scripts-repo/repokit-common/sync-versions.py --set 0.1.4 --dev-refresh  # Clears 0.1.4
+python scripts-repo/repokit-common/sync-versions.py --dev-refresh 0.1.3 0.1.4  # Clears multiple versions
 
 # Preview cache clearing without removing
-python scripts-repo/sync-versions.py --dev-refresh --dry-run
+python scripts-repo/repokit-common/sync-versions.py --dev-refresh --dry-run
 
 # Skip confirmation prompts (use after reviewing with --dry-run)
-python scripts-repo/sync-versions.py --dev-refresh 0.1.3 0.1.4 --force
+python scripts-repo/repokit-common/sync-versions.py --dev-refresh 0.1.3 0.1.4 --force
 ```
 
 ### Version Bumping Workflow
@@ -114,10 +114,10 @@ python scripts-repo/sync-versions.py --dev-refresh 0.1.3 0.1.4 --force
 # 1. Make your code changes
 # 2. Update CHANGELOG.md with new version section
 # 3. Bump and sync versions
-python scripts-repo/sync-versions.py --bump patch
+python scripts-repo/repokit-common/sync-versions.py --bump patch
 
 # 4. Verify everything is in sync
-python scripts-repo/sync-versions.py --check
+python scripts-repo/repokit-common/sync-versions.py --check
 
 # 5. Commit all changes
 git add -A
