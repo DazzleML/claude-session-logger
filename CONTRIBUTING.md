@@ -1,104 +1,49 @@
-# Contributing to claude-session-logger
+# Contributing to git-repokit-common
 
-Thank you for considering contributing to claude-session-logger! This project aims to make Claude Code sessions more manageable through real-time logging and session organization.
+Thank you for considering contributing to git-repokit-common!
 
-## Code of Conduct
+## Development Setup
 
-Please be respectful and constructive in all interactions. We're all here to make Claude Code better.
+### Prerequisites
 
-## How Can I Contribute?
+- **Python 3.10+**
+- **Git**
 
-### Reporting Bugs
+### Clone and Install
 
-Before creating a bug report, please:
-1. Check the [existing issues](https://github.com/DazzleML/claude-session-logger/issues) to avoid duplicates
-2. Collect relevant information:
-   - Your OS and Python version
-   - Claude Code version
-   - Relevant log output from `~/.claude/logs/hook-debug.log`
-   - Steps to reproduce the issue
+```bash
+git clone https://github.com/DazzleTools/git-repokit-common.git
+cd git-repokit-common
+python -m venv .venv
+source .venv/bin/activate        # Linux/Mac
+# or: .venv\Scripts\activate     # Windows
+pip install -e ".[dev]"
+```
 
-### Suggesting Enhancements
+### Run Tests
 
-We welcome ideas for:
-- New log channels or data to capture
-- Improvements to auto-naming logic
-- Better cross-platform support
-- Integration with other tools
+```bash
+python -m pytest tests/ -v
+```
 
-Open a [feature request](https://github.com/DazzleML/claude-session-logger/issues/new?template=feature-request.md) with your idea.
+## Project Structure
 
-### Pull Requests
+```
+scripts/
+  __init__.py         # Package initialization
+  __main__.py         # CLI entry (python -m scripts)
+  _version.py         # Version (PEP 440)
+tests/
+  conftest.py         # Shared fixtures
+  test_*.py           # Test files
+  one-offs/           # Quick checks, proof-of-concept scripts
+scripts/
+  repokit-common/     # Shared tools (git submodule)
+```
 
-#### Setup
+## Key Design Principles
 
-1. Fork the repository
-2. Clone your fork:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/claude-session-logger.git
-   cd claude-session-logger
-   ```
-3. Create a branch:
-   ```bash
-   git checkout -b feature/my-improvement
-   ```
-
-#### Development
-
-The main hook code is in `claude/hooks/log-command.py`. Key areas:
-
-| Area | Functions |
-|------|-----------|
-| Auto-naming | `derive_session_name_from_cwd()`, `GENERIC_FOLDER_NAMES` |
-| Logging | `log_tool_call()`, `log_task_operation()` |
-| Session state | `get_session_state()`, `save_session_state()` |
-| Symlinks | `ensure_transcript_symlink()` |
-
-#### Testing Your Changes
-
-1. Copy your modified hook to `~/.claude/hooks/`:
-   ```bash
-   cp claude/hooks/log-command.py ~/.claude/hooks/
-   ```
-2. Start a new Claude Code session
-3. Check debug output:
-   ```bash
-   tail -f ~/.claude/logs/hook-debug.log
-   ```
-4. Verify sesslogs are created correctly
-
-#### Code Style
-
-- Follow PEP 8 guidelines
-- Keep line length under 127 characters
-- Add docstrings to new functions
-- Use type hints where practical
-
-#### Submitting
-
-1. Ensure your code passes lint checks:
-   ```bash
-   flake8 claude/hooks/*.py --max-line-length=127
-   ```
-2. Verify Python syntax on multiple versions:
-   ```bash
-   python -m py_compile claude/hooks/log-command.py
-   ```
-3. Update CHANGELOG.md if adding features
-4. Push your branch and open a pull request
-
-### Areas for Contribution
-
-Looking for something to work on? Consider:
-
-- **Windows improvements**: Better symlink handling, path edge cases
-- **macOS testing**: Verify full functionality on macOS
-- **Documentation**: Usage examples, troubleshooting guides
-- **Performance**: Optimize for very long sessions
-- **New features**: Additional log channels, filtering options
-
-## Questions?
-
-Open a [discussion](https://github.com/DazzleML/claude-session-logger/discussions) or reach out via issues.
-
-Thank you for helping make Claude Code sessions easier to manage!
+1. **Tests are important** -- write tests for new features
+2. **One-offs graduate** -- quick tests in `tests/one-offs/` can be promoted to proper tests
+3. **Cross-platform** -- works on Windows, Linux, macOS
+4. **Clean commits** -- use conventional commit format

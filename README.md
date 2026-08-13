@@ -1,216 +1,88 @@
-# claude-session-logger
+# git-repokit-common
 
-[![GitHub release](https://img.shields.io/github/v/release/DazzleML/claude-session-logger?include_prereleases&color=brightgreen)](https://github.com/DazzleML/claude-session-logger/releases)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#platform-support)
-
-> **Session logging, command history, and auto-naming for Claude Code**
-
-A hook-based extension for Claude Code that provides persistent session logging, automatic session naming from your working directory, and transcript discovery via symlinks.
-
-## Features
-
-- **Session Logging** - Log all tool calls to session-specific files in `~/.claude/sesslogs/`
-- **Auto-Naming** - Sessions automatically named from working directory (e.g., `c--code` or `my-project`)
-- **Transcript Symlinks** - Easy access to transcript files via `transcript.jsonl` in sesslog directories
-- **Run Tracking** - Track multiple runs within a session with run markers
-- **Task Logging** - Dedicated logging for TaskCreate/TaskUpdate/TaskList operations
-- **AI Rename** - `/renameAI` command for AI-assisted session naming
-- **Session Info** - `/sessioninfo` command to inspect current session state
+Shared scripts, hooks, and developer tools for DazzleTools projects. Consumed as a git subtree in `scripts/`.
 
 ## Quick Start
 
-```bash
-claude plugin marketplace add "DazzleML/claude-session-logger"
-claude plugin install session-logger@dazzle-claude-plugins
-```
-
-Requires the [native Claude Code installer](https://docs.anthropic.com/en/docs/claude-code/getting-started) (not npm). For other install methods (local clone, manual) and for troubleshooting see the [Installation Guide](docs/installation.md).
-
-### Updating
+Add to your project:
 
 ```bash
-claude plugin marketplace update dazzle-claude-plugins
-claude plugin update session-logger@dazzle-claude-plugins
+# Add as a subtree at scripts/
+git subtree add --prefix=scripts https://github.com/DazzleTools/git-repokit-common.git main --squash
+
+# Add named remote for convenience
+git remote add repokit-common https://github.com/DazzleTools/git-repokit-common.git
+
+# Install git hooks
+bash scripts/install-hooks.sh
 ```
 
-(Note: `claude plugin install` does **not** update an existing install.)  For additional details on verifying versions, multi-user machines, etc. see the [Updating](docs/installation.md#updating) section of the Installation Guide.
+Update to latest:
 
-## Usage
-
-### Automatic Session Logging
-
-Once installed, all Claude Code sessions are automatically logged to:
-
-```
-~/.claude/sesslogs/{session-name}__{session-id}_{user}/
-├── .sesslog_*.log          # Session log (tool calls, timestamps)
-├── .shell_*.log            # Shell command output
-├── .tasks_*.log            # Task operations log
-└── transcript.jsonl        # Symlink to transcript file
+```bash
+bash scripts/update-common.sh            # pull latest
+bash scripts/update-common.sh --check    # check if behind upstream
+bash scripts/update-common.sh --push     # push local changes upstream
 ```
 
-### Auto-Naming Examples
+## What's Included
 
-Sessions are automatically named based on your working directory:
+### Git Hooks (`hooks/`)
+- **pre-commit** -- Version sync (`sync-versions.py --auto`), private content protection, large file blocking
+- **post-commit** -- Refreshes version hash after commit
+- **pre-push** -- Python syntax check, pytest, debug statement detection
 
-| Working Directory | Auto-Generated Name |
-|-------------------|---------------------|
-| `C:\code\my-project` | `my-project` |
-| `C:\code` | `c--code` |
-| `C:\code\project\local` | `project--local` |
-| `/home/dev/app` | `app` |
+### Version Management
+- **sync-versions.py** -- Single source of truth for version bumping with git metadata. See [docs/sync-versions.md](docs/sync-versions.md) for full reference.
+- **update-version.sh** -- Legacy bash version updater (deprecated; use sync-versions.py)
 
-Generic folder names (code, project, local, src, etc.) trigger path-based naming with parent context.
+### GitHub Tools
+- **gh_issue_full.py** -- Display complete issue context: timeline, cross-refs, sub-issues, comments
+- **gh_sub_issues.py** -- Manage GitHub sub-issue relationships
 
-### Commands
+### Claude Code Session Tools
+- **search_sesslog.py** -- Search Claude Code JSONL session transcripts
+- **extract_tool_result.py** -- Find and extract tool results from session data
 
-#### `/renameAI`
-AI-assisted session renaming. Analyzes your conversation and suggests a descriptive name.
+### CLI Demo Recording (`demo/`)
+- **demo/build_demo.py** -- Build CLI demo recordings
+- **demo/demo_render.py** -- Render demo recordings
+- **demo/vhs/** -- VHS tape templates for CLI demo recording
 
-```
-> /renameAI
-Analyzing conversation...
-Suggested name: "AuthRefactorAndTests"
-```
-
-#### `/sessioninfo`
-Display current session state including ID, name, run number, and log paths.
-
-```
-> /sessioninfo
-Session ID: 833a100e-d959-47aa-9db2-d22fdb6d7659
-Session Name: my-project
-Run Number: 2
-Sesslog Directory: ~/.claude/sesslogs/my-project__833a100e-..._User/
-```
-
-## Tips
-
-- **First-time `/rename`**: The built-in `/rename` command may fail on first use in a new session (before any tools run). Just run it again or use any tool first. See [Known Quirks](docs/installation.md#known-quirks).
+### Utilities
+- **install-hooks.sh** -- Install git hooks from this submodule into `.git/hooks/`
+- **paths.sh** -- Common path constants for scripts
+- **safe_move.sh** -- Hash-verified file move with timestamp preservation
 
 ## Configuration
 
-The hook creates these directories automatically:
+Projects configure repokit-common via `[tool.repokit-common]` in `pyproject.toml`:
 
-- `~/.claude/sesslogs/` - Session log files
-- `~/.claude/session-states/` - Session state persistence
-- `~/.claude/logs/` - Debug logs (when enabled)
-
-### Debug Logging
-
-To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Check this file if hooks aren't working as expected.
-
-## Platform Support
-
-| Platform | Status |
-|----------|--------|
-| Windows 10/11 | Tested |
-| Windows (MINGW64/Git Bash) | Tested |
-| WSL / WSL2 | Tested |
-| Linux | Tested (Ubuntu 6.8.x) |
-| macOS | Expected to work |
-
-## Project Structure
-
-This project follows the Claude Code plugin architecture:
-
-```
-claude-session-logger/
-├── .claude-plugin/           # Plugin metadata
-│   ├── plugin.json
-│   └── marketplace.json
-├── hooks/                    # Plugin hooks (for Claude Code)
-│   ├── hooks.json
-│   └── scripts/
-│       ├── log-command.py
-│       ├── run-hook.mjs          # Cross-platform Node.js launcher
-│       └── rename_session.py
-├── commands/                 # Plugin commands
-│   ├── renameAI.md
-│   └── sessioninfo.md
-├── scripts-repo/             # Dev tooling (name avoids the plugin system's scripts/ handling)
-│   ├── repokit-common/       # Git subtree from DazzleTools/git-repokit-common
-│   │   ├── hooks/            # Git hooks (pre-commit, etc.)
-│   │   ├── install-hooks.sh
-│   │   ├── sync-versions.py  # Version sync (configured via pyproject.toml)
-│   │   └── ...               # issue/backlink/sesslog tooling
-│   └── local/                # Project-local tooling (not from upstream)
-│       ├── audit_codebase.py    # git-commit function-diff tool
-│       ├── dev-refresh.py       # Clear plugin cache during development
-│       ├── diff-harness.py      # Differential test harness for sync-versions
-│       └── hooks/pre-commit-basic
-├── pyproject.toml            # Configures sync-versions.py extra-targets, etc.
-├── version.py
-└── ...
+```toml
+[tool.repokit-common]
+version-source = "mypackage/_version.py"
+changelog = "CHANGELOG.md"
+repo-url = "https://github.com/DazzleTools/my-project"
+tag-prefix = "v"
+tag-format = "pep440"
+private-patterns = ["private/", "local/", ".env"]
 ```
 
-## How It Works
+### Tag Format
 
-1. **SessionStart Hook** - On session start:
-   - Creates sesslog directory
-   - Auto-names session from working directory (if unnamed)
-   - Creates transcript symlink
-   - Initializes run tracking
+The `tag-format` option controls how git tags are generated for CHANGELOG compare links and `--check` validation:
 
-2. **PostToolUse Hook** - After each tool call:
-   - Logs tool name, timestamp, and context to sesslog
-   - Tracks task operations separately
-   - Updates session state
+| Value | Example Tag | When to Use |
+|-------|-------------|-------------|
+| `"pep440"` (default) | `v0.1.3a1` | Projects using PEP 440 tags for PyPI compatibility |
+| `"human"` | `v0.1.3-alpha` | Projects using human-readable tags matching CHANGELOG headers |
 
-3. **Session State** - Persisted in `~/.claude/session-states/`:
-   - `{session-id}.json` - Full session state
-   - `{session-id}.name-cache` - Cached session name
-   - `{session-id}.run` - Current run number
-   - `{session-id}.started` - Session start flag
+For stable releases (no phase suffix), both formats produce identical tags (`v0.5.0`). The difference only matters for pre-release versions (alpha, beta, rc).
 
-## Comparison with cchistory
+## Changelog
 
-[cchistory](https://github.com/eckardt/cchistory) is a great tool that extracts shell commands from Claude Code's transcript files after the fact.
-
-**claude-session-logger** takes a different approach:
-
-| Feature | claude-session-logger | cchistory |
-|---------|----------------------|-----------|
-| Approach | Real-time hooks (watch live) | Post-hoc parsing |
-| Data source | Separate log channels | Claude's transcript files |
-| Shell commands | Yes | Yes |
-| Task operations | Yes (TaskCreate, etc.) | No |
-| File read/writes | Yes | No |
-| Session naming | Yes (auto + AI) | No |
-| Run tracking | Yes | No |
-| Transcript symlinks | Yes | No |
-
-**When to use which:**
-- **cchistory**: Quick extraction of shell commands from past sessions
-- **claude-session-logger**: Real-time structured session management — watch commands as they happen, copy-paste on the fly, spot-check Claude's actions live
-
-These tools are complementary. You might use cchistory for quick historical lookups and claude-session-logger for real-time monitoring and session organization.
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
-
-See **[Developer Guide](docs/dev.md)** for:
-- Local plugin testing workflow
-- Version management with `sync-versions.py`
-- Debugging tips and session state files
-- Pull request checklist
-
-Like the project?
-
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/djdarcy)
-
-## Related Projects
-
-- [Claude-Session-Backup](https://github.com/DazzleML/Claude-Session-Backup) - Companion tool: git-backed backup of the sessions this plugin logs, with timeline view, deletion detection, and session restore
-- [dazzle-filekit](https://github.com/DazzleLib/dazzle-filekit) - Cross-platform file operations toolkit
-- [cchistory](https://github.com/eckardt/cchistory) - Extract shell commands from Claude Code transcripts
-- [Claude Code](https://claude.ai/code) - Anthropic's CLI for Claude
+See [CHANGELOG.md](CHANGELOG.md) for the full version history. Current version: see [`VERSION`](VERSION).
 
 ## License
 
-claude-session-logger, copyright (C) 2026 Dustin Darcy
-
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+GPL-3.0-or-later. See [LICENSE](LICENSE) for details.
