@@ -20,8 +20,17 @@ else
     SCRIPTS_REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 fi
 
-# Repository root (parent of scripts-repo)
-REPO_ROOT="$(dirname "$SCRIPTS_REPO_DIR")"
+# Repository root: walk up from the scripts-repo dir until a .git is found
+# (supports nested placements like scripts/repokit-common/ as well as the
+# legacy scripts/ prefix; -e matches both .git dirs and worktree .git files)
+REPO_ROOT="$SCRIPTS_REPO_DIR"
+while [ "$REPO_ROOT" != "/" ] && [ ! -e "$REPO_ROOT/.git" ]; do
+    REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+if [ ! -e "$REPO_ROOT/.git" ]; then
+    # Fallback to the legacy assumption (parent of scripts-repo)
+    REPO_ROOT="$(dirname "$SCRIPTS_REPO_DIR")"
+fi
 
 # Scripts-repo subdirectories
 GIT_HOOKS_DIR="$SCRIPTS_REPO_DIR/hooks"
