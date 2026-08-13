@@ -4,6 +4,19 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.10] - 2026-08-13
+
+Documentation-integrity release (#41 wave 1): the channel reference and shipped presets had drifted from the code — in two cases teaching config that the merge silently ignores. No runtime behavior changes.
+
+### Fixed
+- **`docs/channels.md` was unregeneratable and three months stale**: its generator (`scripts-repo/local/generate_channel_docs.py`) still imported `TOOL_CATEGORIES`/`_default_channels` as top-level attributes of `log-command.py`, which moved into the `cclogger` package in the Phase 0b modularization (#37) — the script had crashed with `AttributeError` ever since, and the committed reference predated five channels (`agents`, `convo`, `fileio`, `tools-output` + the `message_*`/`meta`/`todo`/`io` route families). Imports fixed; reference regenerated.
+- **Two presets carried the removed `routing.subtype_routing` key** (hard-removed in v0.3.7-pre, superseded by per-channel `options.subtype_split` — #48/#49): `session-logger-power-user.json`'s block was silently dropped by the merge, so the preset did not deliver its advertised per-subtype splits (now: `subtype_split: true` on `shell` and `tools`; `agents` splits per-agent by default); `session-logger-custom-mcp-channel.json` both used the dead key and instructed it by name in its `_comment` (now demonstrates `options.subtype_split: true` on the custom channel).
+- **`docs/configuration.md` still taught the removed key as current** (three sites): the "Split a category by subtype" section rewritten for the per-channel field (bool + list forms, `agents` default noted), and the `overrides.json` layout line corrected (`mcp_server_routes`, not `subtype_routing`).
+
+### Added
+- **Docs drift guard** (`tests/one-offs/test_channel_docs_drift.py`): regenerates the channel reference in-memory and diffs it against `docs/channels.md`, so changing routing defaults without regenerating fails the suite in the same run instead of rotting silently. Suite: 419.
+- **`docs/channels.md` now surfaces all three routing axes**, not just category routes: new "Tool Overrides (defaults)" and "MCP Server Routes (defaults)" sections (previously `tools-output` was mislabeled as reachable via `_default` fallback when it is reached only through the `TaskOutput` override), plus a plain-language "how routing works, from zero" explainer and the mental-model axis — a category says what an event *is*; a channel says how its stream is *shown* — stated in both the generated reference and `docs/configuration.md`.
+
 ## [0.3.9] - 2026-08-12
 
 Completes #52 (over-long session names silently disabled all logging). Released as 0.3.9 rather than folded into 0.3.8 because branch-built 0.3.8 installations are already deployed; a release re-using the 0.3.8 number would be invisible to `claude plugin update` on those boxes — the same version-metadata trap 0.3.8 itself fixed.

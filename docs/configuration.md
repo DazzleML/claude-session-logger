@@ -14,6 +14,8 @@ Three concepts:
 
 Each tool belongs to one category. Each category routes to one or more channels. You customize routing to control where each kind of activity lands.
 
+The axis that makes everything else make sense: **a category says what an event *is*; a channel says how its stream is *shown*.** Classification is fixed by the tool's nature; presentation — formatting, verbosity, newline handling, subtype splitting — is each channel's own choice. That's why presentation options (`verbosity`, `subtype_split`, ...) live on channels, never on categories.
+
 ## Default Channels
 
 | Channel | File | Purpose |
@@ -46,7 +48,7 @@ The loader checks two layouts. Use whichever you prefer.
 │   ├── shell.json     ({file_prefix, enabled})
 │   ├── tools.json
 │   └── ...
-└── overrides.json     (category_routes, tool_overrides, subtype_routing)
+└── overrides.json     (category_routes, tool_overrides, mcp_server_routes)
 ```
 
 If both exist, the directory wins (debug-log warning notes the file is ignored).
@@ -90,31 +92,33 @@ Single-file:
 }
 ```
 
-### Split a category by subtype (per-tool channels)
+### Split a channel by subtype (per-subtype files)
 
-Splits Bash and PowerShell into separate `.shell-bash_*.log` and `.shell-powershell_*.log`:
+Subtype splitting is a **per-channel** opt-in via `channels.<name>.options.subtype_split` (this field replaced the `routing.subtype_routing` category-wide toggle, which was removed in v0.3.7-pre — that old key is now silently ignored). Splitting the shell channel into `.shell-bash_*.log`, `.shell-powershell_*.log`, ...:
 
 ```json
 {
   "routing": {
-    "subtype_routing": {
-      "bash": true
+    "channels": {
+      "shell": {"options": {"subtype_split": true}}
     }
   }
 }
 ```
 
-Or split only specific subagents:
+Or split the agents channel only for specific subagents (list form):
 
 ```json
 {
   "routing": {
-    "subtype_routing": {
-      "meta": ["help", "senior-engineer"]
+    "channels": {
+      "agents": {"options": {"subtype_split": ["help", "senior-engineer"]}}
     }
   }
 }
 ```
+
+The `agents` channel ships with `subtype_split: true` by default — per-agent files (`.agents-help_*`, `.agents-senior-engineer_*`, ...) appear automatically; every other channel defaults to `false`. Values: `false` (no split) | `true` (split for any subtype) | `["name", ...]` (split only for listed subtypes). See [channels.md](channels.md) for which category each subtype value comes from.
 
 ### Disable conversation capture
 

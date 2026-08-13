@@ -1,6 +1,6 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "POWER USER preset: all channels enabled, including subtype splits for shell, MCP, and agents. Maximum visibility.",
+  "_comment": "POWER USER preset: all channels enabled, including per-channel subtype splits -- shell and tools split by subtype below (.shell-powershell_*, .tools-github_*, ...), and the agents channel splits per-agent by default (.agents-help_*, ...) without any config. Uses routing.channels.<name>.options.subtype_split (the per-channel field that replaced the removed routing.subtype_routing category toggle in v0.3.7-pre). Maximum visibility.",
 
   "performance": {
     "skill_args_length": 200,
@@ -13,18 +13,12 @@
   },
   "routing": {
     "channels": {
-      "shell":    {"file_prefix": ".shell_",    "enabled": true},
+      "shell":    {"file_prefix": ".shell_",    "enabled": true, "options": {"subtype_split": true}},
       "sesslog":  {"file_prefix": ".sesslog_",  "enabled": true},
       "tasks":    {"file_prefix": ".tasks_",    "enabled": true},
-      "tools":    {"file_prefix": ".tools_",    "enabled": true},
+      "tools":    {"file_prefix": ".tools_",    "enabled": true, "options": {"subtype_split": true}},
       "convo":    {"file_prefix": ".convo_",    "enabled": true},
       "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
-    },
-    "subtype_routing": {
-      "bash": true,
-      "mcp": true,
-      "meta": true,
-      "skill": true
     }
   }
 }
