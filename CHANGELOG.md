@@ -2,142 +2,39 @@
 
 All notable changes to claude-session-logger will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.3.9] - 2026-08-12
 
-Completes #52 (over-long session names silently disabled all logging). Released as
-0.3.9 rather than folded into 0.3.8 because branch-built 0.3.8 installations are
-already deployed; a release re-using the 0.3.8 number would be invisible to
-`claude plugin update` on those boxes — the same version-metadata trap 0.3.8
-itself fixed.
+Completes #52 (over-long session names silently disabled all logging). Released as 0.3.9 rather than folded into 0.3.8 because branch-built 0.3.8 installations are already deployed; a release re-using the 0.3.8 number would be invisible to `claude plugin update` on those boxes — the same version-metadata trap 0.3.8 itself fixed.
 
 ### Fixed
-- **An unreadable config path could kill the entire hook** (#52, catastrophic half):
-  `load_config_file()` opened with `if not path.exists(): return {}` placed *outside*
-  its `try`. `pathlib.Path.exists()` only swallows the errnos in
-  `pathlib._IGNORED_ERRNOS` (`ENOENT`, `ENOTDIR`, `EBADF`, `ELOOP`) and re-raises
-  everything else — so on Linux an over-long `claude-history-<ctx>.json` path raised
-  `ENAMETOOLONG`, escaped the function, and killed the hook **before it wrote
-  anything**: zero log files for the session, and the hook still exits 0 so nothing
-  surfaced to the user. The pre-check is now removed entirely; `open()` inside the
-  existing `try` already reports a missing file as `FileNotFoundError`, so it never
-  bought anything. Any unreadable path — over-long, permission-denied, I/O error — is
-  now correctly treated as "no config present". Regression tests force the errno
-  rather than building a real over-long filename, because the natural repro is
-  Linux-only (Windows maps the condition to an ignored winerror and returns `False`),
-  which would make a filesystem-based test silently no-op on Windows.
-- **Over-long session names now LOG instead of silently vanishing** (#52, second
-  half). Root cause was a budget asymmetry: the directory name was already capped
-  (~209-char name budget) but filenames were not, and the narrowest consumer (the
-  `claude-history-<ctx>.json` sidecar, 179-char budget) blew the 255-byte component
-  limit first — a name in the 30-char gap produced a *valid directory* and *zero
-  files*. Four unbounded fields shared that one budget: session name (user-authored),
-  shell (tmux session names), subtype (`subagent_type`), and username (env). All four
-  are now capped with fixed byte-aware constants (`NAME_MAX_BYTES=100`,
-  `SHELL_MAX_BYTES=40`, `SUBTYPE_MAX_BYTES=24`, `USERNAME_MAX_BYTES=20` in
-  `session_naming.py`), applied **once, at the name input boundaries** —
-  `build_session_context()` and `get_effective_session_name()`'s on-disk recovery —
-  so every consumer (`get_filename_context`, the sidecar path, `build_filename`,
-  `build_session_dirname`) sees the identical capped string. Fixed constants rather
-  than per-file budgets are deliberate: per-file truncation would rename the same
-  session differently under different shells/channels — the churn class the
-  delimiter-collision fix (#51) exists to prevent. Worst-case arithmetic
-  (`prefix + shell + name + --NNN + guid + user + .log` = 249 ≤ 255) is asserted by
-  a constant-drift guard test, so a future prefix/cap change fails loudly. Measured
-  against all 431 real session dirs on the dev box (longest name 94 bytes): every
-  real name passes through byte-identical; the caps bind only in the adversarial
-  tail. 16 new tests including a real-hook-subprocess E2E: a 250-char name yields
-  one file per channel, entries written, no FATAL, and a byte-identical filename
-  set across three restarts. Mutation-verified (7 killed + 1 documented-redundancy
-  survivor) and live-verified on the dev box per
-  `tests/checklists/v0.3.9__Fix__issue-52-filename-length-cap.md`. On Windows,
-  `MAX_PATH` (full-path, 260) can still bind before the 255 component limit in
-  deeply nested home dirs — out of scope here, noted for #16.
+- **An unreadable config path could kill the entire hook** (#52, catastrophic half): `load_config_file()` opened with `if not path.exists(): return {}` placed *outside* its `try`. `pathlib.Path.exists()` only swallows the errnos in `pathlib._IGNORED_ERRNOS` (`ENOENT`, `ENOTDIR`, `EBADF`, `ELOOP`) and re-raises everything else — so on Linux an over-long `claude-history-<ctx>.json` path raised `ENAMETOOLONG`, escaped the function, and killed the hook **before it wrote anything**: zero log files for the session, and the hook still exits 0 so nothing surfaced to the user. The pre-check is now removed entirely; `open()` inside the existing `try` already reports a missing file as `FileNotFoundError`, so it never bought anything. Any unreadable path — over-long, permission-denied, I/O error — is now correctly treated as "no config present". Regression tests force the errno rather than building a real over-long filename, because the natural repro is Linux-only (Windows maps the condition to an ignored winerror and returns `False`), which would make a filesystem-based test silently no-op on Windows.
+- **Over-long session names now LOG instead of silently vanishing** (#52, second half). Root cause was a budget asymmetry: the directory name was already capped (~209-char name budget) but filenames were not, and the narrowest consumer (the `claude-history-<ctx>.json` sidecar, 179-char budget) blew the 255-byte component limit first — a name in the 30-char gap produced a *valid directory* and *zero files*. Four unbounded fields shared that one budget: session name (user-authored), shell (tmux session names), subtype (`subagent_type`), and username (env). All four are now capped with fixed byte-aware constants (`NAME_MAX_BYTES=100`, `SHELL_MAX_BYTES=40`, `SUBTYPE_MAX_BYTES=24`, `USERNAME_MAX_BYTES=20` in `session_naming.py`), applied **once, at the name input boundaries** — `build_session_context()` and `get_effective_session_name()`'s on-disk recovery — so every consumer (`get_filename_context`, the sidecar path, `build_filename`, `build_session_dirname`) sees the identical capped string. Fixed constants rather than per-file budgets are deliberate: per-file truncation would rename the same session differently under different shells/channels — the churn class the delimiter-collision fix (#51) exists to prevent. Worst-case arithmetic (`prefix + shell + name + --NNN + guid + user + .log` = 249 ≤ 255) is asserted by a constant-drift guard test, so a future prefix/cap change fails loudly. Measured against all 431 real session dirs on the dev box (longest name 94 bytes): every real name passes through byte-identical; the caps bind only in the adversarial tail. 16 new tests including a real-hook-subprocess E2E: a 250-char name yields one file per channel, entries written, no FATAL, and a byte-identical filename set across three restarts. Mutation-verified (7 killed + 1 documented-redundancy survivor) and live-verified on the dev box per `tests/checklists/v0.3.9__Fix__issue-52-filename-length-cap.md`. On Windows, `MAX_PATH` (full-path, 260) can still bind before the 255 component limit in deeply nested home dirs — out of scope here, noted for #16.
 
 ## [0.3.8] - 2026-08-12
 
-Delimiter-collision fix release: session names and tmux-derived shell strings
-containing `__` (the log-filename field delimiter) no longer corrupt filenames.
-Also realigns the published version metadata (previous `main` carried v0.3.7-pre
-code while still declaring 0.3.6, making new pushes invisible to
-`claude plugin update`).
+Delimiter-collision fix release: session names and tmux-derived shell strings containing `__` (the log-filename field delimiter) no longer corrupt filenames. Also realigns the published version metadata (previous `main` carried v0.3.7-pre code while still declaring 0.3.6, making new pushes invisible to `claude plugin update`).
 
 ### Fixed
-- **Delimiter-collision filename growth loop** (live repro 2026-08-12): a session named
-  `2026-8-12__zeromeld.org__reddit-slack-fixes` in tmux session
-  `redditslack_2026-08-12_updating-users` gained a `{shell}__{segment}__` insertion
-  layer on nearly every hook event (45 renames observed; filenames tripling in length,
-  heading for the 255-char limit). Multiple compounding defects, each independently
-  covered by a mutation-verified test:
-  - `discover_channel_basenames()` captured the channel basename with a greedy `[\w-]+`
-    (`\w` includes `_`), so it "discovered" multi-field blobs like `convo_{shell}__{seg}`
-    as subtype basenames; Phase-2 reconciliation then renamed correct files INTO those
-    blob names — the growth-loop generator. The snapshot fixture (ordinary `__`-free
-    name) showed the same corruption: 8 stacked `tmux_` layers and 66 spurious artifacts
-    in a 25-event run. Basename class is now `[a-zA-Z0-9-]+` (channel names never
-    contain `_`), with shell/name treated as opaque and the GUID as the anchor.
-  - `extract_session_name_from_file()` (reconciliation.py) and `_embedded_session_name()`
-    (file_io.py — feeds the orphan sweep) used `__([^_]+?)__{guid}` parses that returned
-    a truncated-but-plausible name (`reddit-slack-fixes` instead of the full name),
-    feeding wrong old/new pairs into rename — and making the sweep classify CORRECT
-    files as orphans and quarantine them into `baks/`. Both are now GUID-anchored
-    non-truncating parses; the `_embedded_session_name` channel class also excludes `_`.
-  - `_rename_files_for_session_change()` had no idempotency guard: a mis-parsed old/new
-    pair substituted the new name INSIDE an already-correct filename (insertion, not
-    replacement). Now skips any file whose structural position already carries the new
-    name, and the unnamed->named branch refuses to touch files already in named form.
-  - The unnamed->named branch's shell field `[\w.]+` rejected hyphens, silently skipping
-    unnamed files whose shell embeds dates (e.g. `tmux_redditslack_2026-08-12_...`).
-    Now `[\w.-]+`. The named->renamed pattern also handles `--NNN` sequence files.
-- **`find_session_files()`** shell field `[^_]+` assumed underscore-free shells; now
-  channel-prefix + GUID anchored with shell/name opaque.
-- **`get_subtype()` emitted underscores into channel basenames** (found by adversarial
-  post-fix testing): a snake_case `subagent_type` (e.g. `my_snake_agent`) produced the
-  channel basename `agents-my_snake_agent`, which the (correctly `_`-free) discovery
-  parse mis-split as phantom basename `agents-my` — re-triggering the growth loop
-  (+1 `--NNN` file per hook event) through the third `_`-bearing field, reachable
-  out of the box since `agents` defaults to `subtype_split: True`. Subtype sanitizer
-  now maps illegal chars AND `_` to `-` (collapsing runs), enforcing the
-  "channel basenames never contain `_`" invariant end to end.
+- **Delimiter-collision filename growth loop** (live repro 2026-08-12): a session named `2026-8-12__zeromeld.org__reddit-slack-fixes` in tmux session `redditslack_2026-08-12_updating-users` gained a `{shell}__{segment}__` insertion layer on nearly every hook event (45 renames observed; filenames tripling in length, heading for the 255-char limit). Multiple compounding defects, each independently covered by a mutation-verified test:
+  - `discover_channel_basenames()` captured the channel basename with a greedy `[\w-]+` (`\w` includes `_`), so it "discovered" multi-field blobs like `convo_{shell}__{seg}` as subtype basenames; Phase-2 reconciliation then renamed correct files INTO those blob names — the growth-loop generator. The snapshot fixture (ordinary `__`-free name) showed the same corruption: 8 stacked `tmux_` layers and 66 spurious artifacts in a 25-event run. Basename class is now `[a-zA-Z0-9-]+` (channel names never contain `_`), with shell/name treated as opaque and the GUID as the anchor.
+  - `extract_session_name_from_file()` (reconciliation.py) and `_embedded_session_name()` (file_io.py — feeds the orphan sweep) used `__([^_]+?)__{guid}` parses that returned a truncated-but-plausible name (`reddit-slack-fixes` instead of the full name), feeding wrong old/new pairs into rename — and making the sweep classify CORRECT files as orphans and quarantine them into `baks/`. Both are now GUID-anchored non-truncating parses; the `_embedded_session_name` channel class also excludes `_`.
+  - `_rename_files_for_session_change()` had no idempotency guard: a mis-parsed old/new pair substituted the new name INSIDE an already-correct filename (insertion, not replacement). Now skips any file whose structural position already carries the new name, and the unnamed->named branch refuses to touch files already in named form.
+  - The unnamed->named branch's shell field `[\w.]+` rejected hyphens, silently skipping unnamed files whose shell embeds dates (e.g. `tmux_redditslack_2026-08-12_...`). Now `[\w.-]+`. The named->renamed pattern also handles `--NNN` sequence files.
+- **`find_session_files()`** shell field `[^_]+` assumed underscore-free shells; now channel-prefix + GUID anchored with shell/name opaque.
+- **`get_subtype()` emitted underscores into channel basenames** (found by adversarial post-fix testing): a snake_case `subagent_type` (e.g. `my_snake_agent`) produced the channel basename `agents-my_snake_agent`, which the (correctly `_`-free) discovery parse mis-split as phantom basename `agents-my` — re-triggering the growth loop (+1 `--NNN` file per hook event) through the third `_`-bearing field, reachable out of the box since `agents` defaults to `subtype_split: True`. Subtype sanitizer now maps illegal chars AND `_` to `-` (collapsing runs), enforcing the "channel basenames never contain `_`" invariant end to end.
 
 ### Added
-- **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied to
-  the **shell field only** (`build_session_context()` shell_type). The shell is
-  machine-generated (`tmux_{session-name}` or a shell binary), so keeping it `__`-free
-  costs nothing and gives the grammar an unambiguous left boundary. **Session names are
-  lossless**: the name field is user-authored and passes through verbatim -- `__` and
-  all -- preserving name<->session round-tripping (`claude --resume <name>` from a
-  copied dir name). Name parses need no collapse: they are bounded by the first `__`
-  (shell boundary) and the `__{guid}` anchor, resolving greedily toward the GUID, so
-  raw `__` inside names is recovered verbatim. (An earlier draft of this release also
-  collapsed names; scope was narrowed per the delimiter-collapse-scope-refinement
-  analysis -- constrain the machine-generated field, never user-authored data.)
-- **`tests/one-offs/test_delimiter_collision.py`**: 16 red-green tests built from the
-  live repro values — truncating-parse units, rename idempotency, lossless-name and
-  shell-collapse contracts, sweep no-quarantine for raw names, hyphenated-shell
-  handling, plus end-to-end harnesses driving the real hook subprocess across
-  simulated restarts asserting filename-set stability and raw-name round-tripping.
-  All fix components mutation-verified (each reverted individually -> specific test
-  goes red). Snapshot differential byte-identical post-fix (baseline on unfixed
-  code: 73 files, 66 of them corrupted, incl. 8 stacked tmux_ prefixes).
+- **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied to the **shell field only** (`build_session_context()` shell_type). The shell is machine-generated (`tmux_{session-name}` or a shell binary), so keeping it `__`-free costs nothing and gives the grammar an unambiguous left boundary. **Session names are lossless**: the name field is user-authored and passes through verbatim -- `__` and all -- preserving name<->session round-tripping (`claude --resume <name>` from a copied dir name). Name parses need no collapse: they are bounded by the first `__` (shell boundary) and the `__{guid}` anchor, resolving greedily toward the GUID, so raw `__` inside names is recovered verbatim. (An earlier draft of this release also collapsed names; scope was narrowed per the delimiter-collapse-scope-refinement analysis -- constrain the machine-generated field, never user-authored data.)
+- **`tests/one-offs/test_delimiter_collision.py`**: 16 red-green tests built from the live repro values — truncating-parse units, rename idempotency, lossless-name and shell-collapse contracts, sweep no-quarantine for raw names, hyphenated-shell handling, plus end-to-end harnesses driving the real hook subprocess across simulated restarts asserting filename-set stability and raw-name round-tripping. All fix components mutation-verified (each reverted individually -> specific test goes red). Snapshot differential byte-identical post-fix (baseline on unfixed code: 73 files, 66 of them corrupted, incl. 8 stacked tmux_ prefixes).
 
 ### Changed
-- **Version metadata realigned**: `version.py` + `.claude-plugin/plugin.json` +
-  `.claude-plugin/marketplace.json` now declare 0.3.8. The v0.3.7-pre relocation work
-  (below) ships in this release.
+- **Version metadata realigned**: `version.py` + `.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` now declare 0.3.8. The v0.3.7-pre relocation work (below) ships in this release.
 
 ### Documentation
-- **README "Updating" section**: `claude plugin install` is a no-op for an
-  already-installed plugin (prints `already installed`, exits 0) — document
-  `claude plugin marketplace update` + `claude plugin update` as the update path,
-  including multi-user (`sudo -H`) setups.
-- **`docs/installation.md`**: warning banner on Method 4 (manual install) about the
-  dual-install trap — plugin + manual hooks both registered means every event logged
-  twice and two logger versions fighting over filenames (observed live: 308-line
-  sesslog, 149 unique) — plus a "Migrating from a manual install to the plugin"
-  section with detection, removal, and single-fire verification steps.
+- **README "Updating" section**: `claude plugin install` is a no-op for an already-installed plugin (prints `already installed`, exits 0) — document `claude plugin marketplace update` + `claude plugin update` as the update path, including multi-user (`sudo -H`) setups.
+- **`docs/installation.md`**: warning banner on Method 4 (manual install) about the dual-install trap — plugin + manual hooks both registered means every event logged twice and two logger versions fighting over filenames (observed live: 308-line sesslog, 149 unique) — plus a "Migrating from a manual install to the plugin" section with detection, removal, and single-fire verification steps.
 - **`settings.json.example`**: scoped to manual installs via `_comment`.
 
 ## [0.3.7-pre] — 2026-06-14 (ships as part of 0.3.8)
@@ -430,14 +327,9 @@ See `2026-05-01__12-03-14__tool-coverage-and-channel-routing-for-unknowns.md` fo
 
 ## [0.2.0] - 2026-04-20
 
-Dev-tooling release: replaces hand-maintained `scripts-repo/` with a git subtree from
-[DazzleTools/git-repokit-common](https://github.com/DazzleTools/git-repokit-common),
-generalizes upstream `sync-versions.py` to handle plugin-specific JSON version files
-(via a strictly-additive `extra-targets` config), and establishes a `scripts-repo/local/`
-convention for project-local tooling that lives alongside the subtree.
+Dev-tooling release: replaces hand-maintained `scripts-repo/` with a git subtree from [DazzleTools/git-repokit-common](https://github.com/DazzleTools/git-repokit-common), generalizes upstream `sync-versions.py` to handle plugin-specific JSON version files (via a strictly-additive `extra-targets` config), and establishes a `scripts-repo/local/` convention for project-local tooling that lives alongside the subtree.
 
-No runtime behavior changes for users -- this release is entirely about how the
-project is developed and versioned. Closes #20 and its sub-issues #24, #25, #26.
+No runtime behavior changes for users -- this release is entirely about how the project is developed and versioned. Closes #20 and its sub-issues #24, #25, #26.
 
 ### Changed
 - **`scripts-repo/` is now a git subtree from DazzleTools/git-repokit-common** (#24, parent #20): Was a hand-maintained directory of dev scripts (sync-versions.py, update-version.sh, install-hooks.sh, hooks/, paths.sh) that had drifted from the upstream tooling shared across DazzleTools/DazzleML projects. Now pulled via `git subtree add --prefix=scripts-repo --squash` from `https://github.com/DazzleTools/git-repokit-common`. Future updates: `git subtree pull --prefix=scripts-repo repokit-common main --squash` (the `repokit-common` remote was added for convenience). The previously-stale local copies of `pre-push` (which contained a wrong-project `folder_datetime_fix/` artifact), `install-hooks.sh` (which hardcoded a project name), and other dev scripts are now replaced by their upstream versions.

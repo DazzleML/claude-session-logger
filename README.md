@@ -21,65 +21,21 @@ A hook-based extension for Claude Code that provides persistent session logging,
 
 ## Quick Start
 
-### Option 1: From GitHub (Recommended)
-
 ```bash
-# Add the DazzleML marketplace (one-time)
 claude plugin marketplace add "DazzleML/claude-session-logger"
-
-# Install the plugin
 claude plugin install session-logger@dazzle-claude-plugins
 ```
 
-### Option 2: From Local Clone
-
-```bash
-# Clone the repository
-git clone https://github.com/DazzleML/claude-session-logger.git
-cd claude-session-logger
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Add as local marketplace and install
-claude plugin marketplace add "./"
-claude plugin install session-logger@dazzle-claude-plugins
-```
-
-**Note:** Requires the [native Claude Code installer](https://docs.anthropic.com/en/docs/claude-code/getting-started), not the npm version. See [Troubleshooting](docs/installation.md#hooks-fail-with-path-errors-npm-installed-claude-code) if hooks don't run.
-
-For more options and troubleshooting, see the [Installation Guide](docs/installation.md).
+Requires the [native Claude Code installer](https://docs.anthropic.com/en/docs/claude-code/getting-started) (not npm). For other install methods (local clone, manual) and for troubleshooting see the [Installation Guide](docs/installation.md).
 
 ### Updating
 
-> **`claude plugin install` does not update an already-installed plugin.** It prints
-> `already installed`, exits 0, and leaves the version unchanged. That reads as
-> success, so it is easy to sit on a months-old version without realizing it.
-
-Use `claude plugin update`:
-
 ```bash
-# Refresh the marketplace clone, then update the plugin
 claude plugin marketplace update dazzle-claude-plugins
 claude plugin update session-logger@dazzle-claude-plugins
 ```
 
-Restart Claude Code to load the new version. To check what you are running:
-
-```bash
-claude plugin list
-```
-
-If you run Claude Code as more than one OS user (for example `root` as well as your
-own account), each has a separate `~/.claude/` tree and must be updated separately:
-
-```bash
-sudo -H claude plugin marketplace update dazzle-claude-plugins
-sudo -H claude plugin update session-logger@dazzle-claude-plugins
-```
-
-The `-H` matters — it points `HOME` at the target user's home so you update the
-intended config tree.
+(Note: `claude plugin install` does **not** update an existing install.)  For additional details on verifying versions, multi-user machines, etc. see the [Updating](docs/installation.md#updating) section of the Installation Guide.
 
 ## Usage
 
@@ -153,7 +109,7 @@ To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Che
 | Windows 10/11 | Tested |
 | Windows (MINGW64/Git Bash) | Tested |
 | WSL / WSL2 | Tested |
-| Linux | Expected to work |
+| Linux | Tested (Ubuntu 6.8.x) |
 | macOS | Expected to work |
 
 ## Project Structure
@@ -229,7 +185,7 @@ claude-session-logger/
 - **cchistory**: Quick extraction of shell commands from past sessions
 - **claude-session-logger**: Real-time structured session management — watch commands as they happen, copy-paste on the fly, spot-check Claude's actions live
 
-These tools are complementary — you might use cchistory for quick historical lookups and claude-session-logger for real-time monitoring and session organization.
+These tools are complementary. You might use cchistory for quick historical lookups and claude-session-logger for real-time monitoring and session organization.
 
 ## Contributing
 
@@ -247,10 +203,13 @@ Like the project?
 
 ## Related Projects
 
-- [cchistory](https://github.com/eckardt/cchistory) - Extract shell commands from Claude Code transcripts
+- [Claude-Session-Backup](https://github.com/DazzleML/Claude-Session-Backup) - Companion tool: git-backed backup of the sessions this plugin logs, with timeline view, deletion detection, and session restore
 - [dazzle-filekit](https://github.com/DazzleLib/dazzle-filekit) - Cross-platform file operations toolkit
+- [cchistory](https://github.com/eckardt/cchistory) - Extract shell commands from Claude Code transcripts
 - [Claude Code](https://claude.ai/code) - Anthropic's CLI for Claude
 
 ## License
+
+claude-session-logger, copyright (C) 2026 Dustin Darcy
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
