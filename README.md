@@ -40,6 +40,11 @@ bash scripts/update-common.sh --push     # push local changes upstream
 - **gh_issue_full.py** -- Display complete issue context: timeline, cross-refs, sub-issues, comments
 - **gh_sub_issues.py** -- Manage GitHub sub-issue relationships
 
+### Knowledge Vault Tools
+- **[docs/vault-spec.md](docs/vault-spec.md)** -- the Vault Specification: canonical definition of `private/claude/` knowledge vaults (layout, maturity ladder, wikilink rules, write authority, ecosystem)
+- **generate-backlinks.py** -- Generate the `_oracle/backlinks.md` reverse-link index for a vault
+- **vault-lint.py** -- Lint a vault against the spec: broken-link classes, orphans, freshness, manifest coverage; `--check` for CI/hooks, `--fix` for the provably-safe class only
+
 ### Claude Code Session Tools
 - **search_sesslog.py** -- Search Claude Code JSONL session transcripts
 - **extract_tool_result.py** -- Find and extract tool results from session data
