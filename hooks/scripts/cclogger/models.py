@@ -163,6 +163,16 @@ class ChannelOptions:
     # The expander iterates the ORIGINAL channel list, not the expanded list, so
     # there is no recursion (`.agents-help_*` never becomes `.agents-help-bash_*`).
     subtype_split: Union[bool, list] = False
+    # Agent-label rendering mode (#55, paired with #50 identity labels):
+    #   "always" (default) -- current behavior: tool entries show
+    #                         `{Bash|Explore: ...}`; agent-role entries show
+    #                         `{AGENT:explore ...}` identity (the #50 feature)
+    #   "auto"             -- identical to "always" EXCEPT the suffix is
+    #                         dropped when it merely repeats the channel's
+    #                         own subtype (`.agents-explore_*` entries render
+    #                         `{Bash: ...}` -- the filename already says who)
+    #   "never"            -- plain labels, no agent identity anywhere
+    agent_label: str = "always"
     # Emitter/collector predicate (#53): entries are emitted carrying
     # attributes (agent_context, ...); a channel declares which it
     # additionally collects, keyed by LogEntry attribute name:

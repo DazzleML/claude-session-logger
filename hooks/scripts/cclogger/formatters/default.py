@@ -52,12 +52,23 @@ class DefaultFormatter(BaseFormatter):
         # the snippet per channel verbosity, then assemble + apply newline
         # policy. This is the path that lets per-channel options actually
         # affect Edit/Write/Skill rich formatting.
+        # #55: does this channel suppress the agent-identity suffix? When it
+        # does, prefer the context-free variants dual-rendered at generation.
+        suppress_agent = bool(
+            getattr(entry, "agent_context", None)
+            and self._agent_identity_for_display(entry) is None
+        )
+
         if entry.summary and "{snippet}" in entry.summary:
-            return self._format_template_entry(entry)
+            return self._format_template_entry(entry, suppress_agent=suppress_agent)
 
         # No template: precomputed legacy_complete (Bash, Read, Grep, ...)
         # has the full byte-identical legacy string. Use it directly.
         legacy_complete = entry.metadata.get("_legacy_complete")
+        if suppress_agent:
+            plain = entry.metadata.get("_legacy_complete_plain")
+            if isinstance(plain, str):
+                legacy_complete = plain
         if isinstance(legacy_complete, str):
             return legacy_complete
 
@@ -65,7 +76,8 @@ class DefaultFormatter(BaseFormatter):
         # (conversation.py LogEntries from Step 6 take this branch).
         return self._format_log_entry(entry)
 
-    def _format_template_entry(self, entry: "LogEntry") -> str:
+    def _format_template_entry(self, entry: "LogEntry",
+                               suppress_agent: bool = False) -> str:
         """Substitute `{snippet}` in entry.summary per channel verbosity.
 
         Output: `[[<datetime>]] {<substituted-summary> }<pwd_part>`
@@ -87,7 +99,12 @@ class DefaultFormatter(BaseFormatter):
         snippet = self._preview_for_display(
             entry.raw_content or "", max_chars, newline_policy
         )
-        body = entry.summary.replace("{snippet}", snippet)
+        template = entry.summary
+        if suppress_agent:
+            plain = entry.metadata.get("summary_plain")
+            if isinstance(plain, str) and "{snippet}" in plain:
+                template = plain
+        body = template.replace("{snippet}", snippet)
 
         # Use pre-computed datetime + pwd from generate_entry metadata
         # to preserve byte-identity with legacy_complete in default channels
@@ -123,6 +140,13 @@ class DefaultFormatter(BaseFormatter):
         max_chars = self._resolve_max_chars(role, tool_name)
         newline_policy = self._resolve_newlines(role, tool_name)
         label = self._resolve_role_label(role)
+
+        # #50: agent-role entries carry the agent's identity in the label
+        # (`{AGENT:explore ...}`), mode-gated per ChannelOptions.agent_label.
+        if role == "agent":
+            identity = self._agent_identity_for_display(entry)
+            if identity:
+                label = f"{label}:{identity}"
 
         # Determine body content
         body = self._build_body(entry, max_chars)

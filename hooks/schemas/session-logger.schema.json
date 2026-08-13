@@ -129,6 +129,12 @@
                       {"type": "array", "items": {"type": "string"}}
                     ]
                   },
+                  "agent_label": {
+                    "type": "string",
+                    "enum": ["always", "auto", "never"],
+                    "default": "always",
+                    "description": "#55: how agent identity renders in this channel's labels. 'always' (default): tool entries show {Bash|Explore: ...} and agent-role entries show {AGENT:explore ...}. 'auto': same, except the identity is dropped when it merely repeats the channel's own subtype (.agents-explore_* entries read {Bash: ...} -- the filename already says who). 'never': plain labels."
+                  },
                   "collect": {
                     "description": "#53 emitter/collector predicate: entries this channel ADDITIONALLY collects, keyed by entry attribute name. This version recognizes 'agent_context' (a subagent's internal tool calls + its final report); unknown keys warn once and are ignored so configs from newer versions degrade gracefully. Values: true = collect any entry with the attribute set; list[str] = collect only listed attribute values (e.g. [\"oracle\", \"help\"]). Additive -- collected entries keep every channel their category route gave them. Default {\"agent_context\": true} on the agents channel only; collected entries split by the attribute value when subtype_split is enabled (.agents-explore_*, ...).",
                     "type": ["object", "null"],

@@ -50,6 +50,15 @@ class ChatFormatter(BaseFormatter):
         newline_policy = self._resolve_newlines(role, tool_name)
         label = self._resolve_role_label(role)
 
+        # #50: per-line agent identity for subagent dialogue -- `AGENT:explore`
+        # instead of bare AGENT, so multi-agent conversations read attributed.
+        # Mode-gated per ChannelOptions.agent_label (#55); identity uses the
+        # normalized form so labels match per-agent file naming.
+        if role == "agent":
+            identity = self._agent_identity_for_display(entry)
+            if identity:
+                label = f"{label}:{identity}"
+
         body = self._truncate(entry.raw_content or "", max_chars)
 
         datetime_mode = "full"

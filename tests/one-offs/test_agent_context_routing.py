@@ -469,3 +469,108 @@ class TestEndToEndFullStory:
         assert names_run2 == names_run3          # no churn, no --NNN growth
         assert not (d / "baks").exists()          # nothing quarantined
         assert not any("--0" in n for n in names_run3)
+
+
+# ============================================================================
+# #50 + #55: agent-label rendering modes (always | auto | never)
+# ============================================================================
+
+class TestAgentLabelModes:
+    def _fmt(self, channel_name, opts, entry):
+        from cclogger.formatters import format_for_channel
+        from cclogger.models import Config
+        return format_for_channel(entry, opts, channel_name, Config())
+
+    def _tool_entry(self, ctx="Explore"):
+        # Shaped like generate_entry output: dual-rendered legacy strings
+        from cclogger.models import LogEntry
+        return LogEntry(
+            raw_content="echo hi",
+            role="bash",
+            metadata={
+                "_legacy_complete": '[[2026-08-13 12:00:00]] {Bash|Explore: echo hi }',
+                "_legacy_complete_plain": '[[2026-08-13 12:00:00]] {Bash: echo hi }',
+                "summary_plain": None,
+            },
+            timestamp=datetime(2026, 8, 13, 12, 0, 0),
+            tool_name="Bash",
+            agent_context=ctx,
+        )
+
+    def _agent_report(self, ctx="Explore"):
+        from cclogger.models import LogEntry
+        return LogEntry(raw_content="report text", role="agent",
+                        tool_name="SubagentStop",
+                        timestamp=datetime(2026, 8, 13, 12, 0, 0),
+                        agent_context=ctx)
+
+    def _opts(self, mode):
+        from cclogger.models import ChannelOptions
+        return ChannelOptions(agent_label=mode)
+
+    def test_always_keeps_tool_suffix(self):
+        out = self._fmt("sesslog", self._opts("always"), self._tool_entry())
+        assert "{Bash|Explore:" in out
+
+    def test_never_drops_tool_suffix(self):
+        out = self._fmt("sesslog", self._opts("never"), self._tool_entry())
+        assert "{Bash:" in out and "|Explore" not in out
+
+    def test_auto_drops_only_when_redundant_with_subtype(self):
+        # In .agents-explore_* the suffix repeats the filename -> dropped
+        out = self._fmt("agents-explore", self._opts("auto"), self._tool_entry())
+        assert "|Explore" not in out
+        # In sesslog the identity is load-bearing -> kept
+        out = self._fmt("sesslog", self._opts("auto"), self._tool_entry())
+        assert "{Bash|Explore:" in out
+
+    def test_agent_role_identity_in_chat(self):
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(formatter="chat", agent_label="always")
+        out = self._fmt("convo", opts, self._agent_report())
+        assert "AGENT:explore" in out  # normalized, matches file naming
+
+    def test_agent_role_identity_in_default_channels(self):
+        out = self._fmt("sesslog", self._opts("always"), self._agent_report())
+        assert "{AGENT:explore:" in out
+
+    def test_agent_role_identity_suppressed_by_never(self):
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(formatter="chat", agent_label="never")
+        out = self._fmt("convo", opts, self._agent_report())
+        assert "AGENT" in out and ":explore" not in out
+
+    def test_auto_suppresses_identity_in_matching_subtype_file(self):
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions(formatter="chat", agent_label="auto")
+        out = self._fmt("agents-explore", opts, self._agent_report())
+        assert ":explore" not in out
+
+    def test_merge_and_default(self, monkeypatch, tmp_path):
+        import cclogger.debug as dbg
+        monkeypatch.setattr(dbg, "UNKNOWN_COLLECT_KEY_WARN_DIR", tmp_path)
+        from cclogger.config_merge import apply_override_channel_options
+        from cclogger.models import ChannelOptions
+        opts = ChannelOptions()
+        assert opts.agent_label == "always"  # snapshot-stable default (#55)
+        apply_override_channel_options(opts, {"agent_label": "auto"}, "t")
+        assert opts.agent_label == "auto"
+        apply_override_channel_options(opts, {"agent_label": "bogus"}, "t")
+        assert opts.agent_label == "auto"  # unknown value ignored
+        apply_override_channel_options(opts, {"agent_label": None}, "t")
+        assert opts.agent_label == "always"
+
+    def test_dual_render_variants_from_real_generation(self):
+        # generate_entry bakes both variants when context present
+        from cclogger.formatters.legacy import generate_entry
+        from cclogger.models import Config, ToolInfo
+        ti = ToolInfo.from_json({
+            "tool_name": "Bash", "tool_input": {"command": "echo x"},
+            "session_id": GUID, "agent_id": "a1", "agent_type": "Explore",
+        })
+        entry = generate_entry(ti, Config(), "echo x",
+                               datetime(2026, 8, 13, 12, 0, 0))
+        lc = entry.metadata["_legacy_complete"]
+        plain = entry.metadata["_legacy_complete_plain"]
+        assert "Bash|Explore" in lc and "Bash|Explore" not in plain
+        assert plain.replace("{Bash:", "{Bash|Explore:") == lc  # only the label differs

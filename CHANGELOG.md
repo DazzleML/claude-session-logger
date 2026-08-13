@@ -4,6 +4,12 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-08-13
+
+### Added
+- **Per-line agent identity in conversation logs** (#50): subagent dialogue in `.convo_*` (and agent-role lines in default-formatter channels like sesslog) now reads `AGENT:explore` instead of bare `AGENT`, so multi-agent conversations are attributed line-by-line. Identity uses the normalized form, matching per-agent file naming.
+- **Configurable agent-label rendering** (#55): new `ChannelOptions.agent_label` — `"always"` (default; current tool labels plus the new agent-role identity), `"auto"` (identical, except the identity is dropped where it merely repeats the channel's own subtype — entries inside `.agents-explore_*` read `{Bash: ...}`, the filename already says who), `"never"` (plain labels). Default `"always"` keeps all existing tool-entry output byte-identical (snapshot-verified). Mechanism: generation dual-renders the composed and context-free label variants (the legacy assembly bakes final strings at generation time); the formatter picks per channel — the full generation-to-formatter assembly move remains a future refactor candidate, recorded in the design ledger.
+
 ## [0.3.14] - 2026-08-13
 
 ### Changed

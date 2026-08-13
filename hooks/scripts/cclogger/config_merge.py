@@ -151,6 +151,14 @@ def apply_override_channel_options(
         elif v is None:
             target.subtype_split = False
 
+    if "agent_label" in override:
+        v = override["agent_label"]
+        if v in ("always", "auto", "never"):
+            target.agent_label = v
+        elif v is None:
+            target.agent_label = "always"
+        # other values ignored (keep current) -- forward-compatible
+
     if "collect" in override:
         v = override["collect"]
         if v is None:

@@ -52,6 +52,36 @@ class BaseFormatter:
     # Shared helpers (used by subclasses; not for external callers)
     # ------------------------------------------------------------------
 
+    def _agent_identity_for_display(self, entry: Any) -> Optional[str]:
+        """#55/#50: the normalized agent identity this channel should show,
+        or None when suppressed by ChannelOptions.agent_label:
+
+          "always" -> show whenever the entry carries agent_context
+          "auto"   -> as always, EXCEPT when the identity merely repeats
+                      this channel's own subtype suffix (an entry from the
+                      Explore agent inside `.agents-explore_*` -- the
+                      filename already says who)
+          "never"  -> never show
+
+        Returns the normalize_subtype() form so displayed identity always
+        matches per-agent file naming.
+        """
+        ctx = getattr(entry, "agent_context", None)
+        if not ctx:
+            return None
+        mode = "always"
+        if self.channel_opts is not None:
+            mode = getattr(self.channel_opts, "agent_label", "always") or "always"
+        if mode == "never":
+            return None
+        from cclogger.categorize import normalize_subtype
+        norm = normalize_subtype(ctx)
+        if not norm:
+            return None
+        if mode == "auto" and self.channel_name.endswith(f"-{norm}"):
+            return None
+        return norm
+
     def _resolve_max_chars(self, role: str, tool_name: Optional[str]) -> int:
         """Return effective max_chars for this entry per channel options.
 

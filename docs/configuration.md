@@ -67,6 +67,7 @@ Every channel accepts an `options` object under `routing.channels.<name>.options
 | `role_labels` | `{role: "LABEL"}` | built-ins | display labels (`{USER:`, `{Bash\|Explore:` ...) |
 | `suppress_markers` | `true`/`false` | `false` | opt this channel out of SESSION START / COMPACT markers |
 | `subtype_split` | `false` / `true` / `["name", ...]` | `false` (`true` on `agents`) | split the stream into `.channel-subtype_*` sibling files (section below) |
+| `agent_label` | `"always"` / `"auto"` / `"never"` | `"always"` | how agent identity renders in labels: tool entries (`{Bash\|explore}`) and agent-role lines (`AGENT:explore`); `auto` drops it only where it repeats the channel's own subtype |
 | `collect` | `{attribute: true \| ["value", ...]}` | `{"agent_context": true}` on `agents` only | additionally collect entries by attribute — the emitter/collector model (section below) |
 
 ### Per-role verbosity (the hierarchy)

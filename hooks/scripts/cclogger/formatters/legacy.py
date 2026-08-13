@@ -710,59 +710,65 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
     if config.pwd_enabled:
         pwd_part = f' ["{os.getcwd()}"]'
 
-    # Get tool name with agent context
+    # Get tool name with agent context -- and (#55) its context-free twin.
+    # These strings are FINAL at generation time (the legacy assembly bakes
+    # the label into _legacy_complete/summary), so per-channel agent_label
+    # modes are served by dual-rendering both variants here and letting the
+    # formatter pick. The full generation->formatter assembly move remains a
+    # #44-era refactor candidate; dual-render is the honest minimal bridge.
     tool_display = format_tool_name(tool_info)
+    tool_display_plain = tool_info.name
 
     # Prefix uncategorized tools with `?` for grep-friendly identification
     # within any channel. Pattern remains parseable: `{?ToolName: ...}`.
     is_unknown = categorize_tool(tool_info.name) == "unknown"
     if is_unknown:
         tool_display = f"?{tool_display}"
+        tool_display_plain = f"?{tool_display_plain}"
 
-    # Determine the legacy body content based on verbosity + action-only.
-    # This builds the v0.3.6-shaped string used to populate _legacy_complete
-    # so non-rich entries (and channels with no options) stay byte-identical.
-    if should_use_action_only(tool_info.name, config):
-        legacy_body = tool_display
-    else:
-        if config.verbosity == 0:
-            legacy_body = legacy_string
-        elif config.verbosity == 1:
-            legacy_body = legacy_string
-        elif config.verbosity == 2:
-            legacy_body = f"{tool_display}: {legacy_string}"
-        elif config.verbosity == 3:
+    def _legacy_body_for(display: str) -> str:
+        """v0.3.6-shaped body for one label variant (byte-identical ladder)."""
+        if should_use_action_only(tool_info.name, config):
+            return display
+        if config.verbosity == 0 or config.verbosity == 1:
+            return legacy_string
+        if config.verbosity == 3:
             if tool_info.description:
-                legacy_body = f"{tool_display}: {legacy_string} {tool_info.description}"
-            else:
-                legacy_body = f"{tool_display}: {legacy_string}"
-        elif config.verbosity == 4:
+                return f"{display}: {legacy_string} {tool_info.description}"
+            return f"{display}: {legacy_string}"
+        if config.verbosity == 4:
             tool_input_json = json.dumps(tool_info.input, separators=(",", ":"))
-            legacy_body = f"{tool_display}: {legacy_string} {tool_input_json}"
-        else:
-            legacy_body = f"{tool_display}: {legacy_string}"
+            return f"{display}: {legacy_string} {tool_input_json}"
+        return f"{display}: {legacy_string}"
 
-    legacy_complete = f"{datetime_part}{{{legacy_body} }}{pwd_part}"
+    legacy_complete = f"{datetime_part}{{{_legacy_body_for(tool_display)} }}{pwd_part}"
+    legacy_complete_plain: Optional[str] = None
+    if tool_info.agent_context:
+        legacy_complete_plain = (
+            f"{datetime_part}{{{_legacy_body_for(tool_display_plain)} }}{pwd_part}"
+        )
 
     # Build the LogEntry's `summary` field: when the handler provided a
     # rich-format template, embed it in the same verbosity-shaped body so
     # DefaultFormatter can substitute the snippet per channel verbosity.
-    summary: Optional[str] = None
-    if summary_template and not should_use_action_only(tool_info.name, config):
+    def _summary_for(display: str) -> Optional[str]:
+        if not summary_template or should_use_action_only(tool_info.name, config):
+            return None
         if config.verbosity == 0 or config.verbosity == 1:
-            summary = summary_template
-        elif config.verbosity == 2:
-            summary = f"{tool_display}: {summary_template}"
-        elif config.verbosity == 3:
+            return summary_template
+        if config.verbosity == 3:
             if tool_info.description:
-                summary = f"{tool_display}: {summary_template} {tool_info.description}"
-            else:
-                summary = f"{tool_display}: {summary_template}"
-        elif config.verbosity == 4:
+                return f"{display}: {summary_template} {tool_info.description}"
+            return f"{display}: {summary_template}"
+        if config.verbosity == 4:
             tool_input_json = json.dumps(tool_info.input, separators=(",", ":"))
-            summary = f"{tool_display}: {summary_template} {tool_input_json}"
-        else:
-            summary = f"{tool_display}: {summary_template}"
+            return f"{display}: {summary_template} {tool_input_json}"
+        return f"{display}: {summary_template}"
+
+    summary = _summary_for(tool_display)
+    summary_plain: Optional[str] = None
+    if tool_info.agent_context:
+        summary_plain = _summary_for(tool_display_plain)
 
     return LogEntry(
         raw_content=raw_content,
@@ -770,6 +776,8 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
         summary=summary,
         metadata={
             "_legacy_complete": legacy_complete,
+            "_legacy_complete_plain": legacy_complete_plain,
+            "summary_plain": summary_plain,
             "pwd_part": pwd_part,
             "datetime_part": datetime_part,
             "is_unknown_tool": is_unknown,
