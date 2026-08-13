@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from cclogger.debug import debug_log
-from cclogger.session_naming import collapse_delimiter, sanitize_dirname
+from cclogger.session_naming import cap_session_name, collapse_delimiter, sanitize_dirname
 
 
 # ============================================================================
@@ -352,9 +352,18 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
 
     If the current session has no name but a named directory exists,
     extract the name from that directory to maintain continuity.
+
+    This is the second name INPUT boundary for the #52 length caps
+    (the first is build_session_context). The recovery branch reads names
+    from DISK, which may carry legacy names written before the cap existed
+    (the old directory budget allowed up to ~209 chars); capping here
+    ensures downstream filename construction never sees an over-budget
+    name regardless of which input path supplied it. `session_name` itself
+    arrives pre-capped from build_session_context, so re-capping it is a
+    no-op kept for the invariant's sake.
     """
     if session_name:
-        return session_name
+        return cap_session_name(session_name)
 
     # Check if any named directories exist for this session
     try:
@@ -368,14 +377,14 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
                     if match:
                         extracted = match.group(1)
                         debug_log(f"Using session name from existing directory: {extracted}")
-                        return extracted
+                        return cap_session_name(extracted)
 
                 # Also check files (for backward compatibility with flat files)
                 if item.is_file() and "__" in item.name:
                     extracted = extract_session_name_from_file(item, session_id)
                     if extracted:
                         debug_log(f"Using session name from existing file: {extracted}")
-                        return extracted
+                        return cap_session_name(extracted)
     except Exception:
         pass
 

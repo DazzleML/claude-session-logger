@@ -11,6 +11,7 @@ import re
 from typing import Any, Optional
 
 from cclogger.debug import debug_log
+from cclogger.session_naming import SUBTYPE_MAX_BYTES, cap_field
 
 
 # ============================================================================
@@ -145,7 +146,12 @@ def get_subtype(category: str, tool_name: str, raw_json: dict[str, Any]) -> Opti
             # delimiter-collision growth loop (2026-08-12 fix).
             safe = re.sub(r"[^A-Za-z0-9\-.]", "-", str(subtype))
             safe = re.sub(r"-{2,}", "-", safe)
-            return safe
+            # Length cap (#52): subtypes become part of the channel prefix
+            # (`.agents-{subtype}_...`), which shares the 255-byte filename
+            # component budget with the shell, name, guid, and username
+            # fields. An unbounded subagent_type would eat the budget the
+            # name caps protect. See session_naming.SUBTYPE_MAX_BYTES.
+            return cap_field(safe, SUBTYPE_MAX_BYTES).rstrip("-.")
         return None
     except Exception:
         return None

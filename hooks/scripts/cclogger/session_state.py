@@ -20,7 +20,14 @@ from dazzle_filekit import normalize_cross_platform_path, create_symlink
 from cclogger import paths
 from cclogger.debug import debug_log
 from cclogger.models import SessionContext, ToolInfo
-from cclogger.session_naming import collapse_delimiter, get_session_name
+from cclogger.session_naming import (
+    SHELL_MAX_BYTES,
+    USERNAME_MAX_BYTES,
+    cap_field,
+    cap_session_name,
+    collapse_delimiter,
+    get_session_name,
+)
 
 
 # ============================================================================
@@ -201,9 +208,19 @@ def detect_tmux_session() -> Optional[str]:
 
 
 def build_session_context(tool_info: ToolInfo) -> SessionContext:
-    """Build the session context for file naming."""
+    """Build the session context for file naming.
+
+    This is a name INPUT boundary for the #52 length caps: every field
+    that ends up inside a filename is capped here, once, so all downstream
+    consumers (get_filename_context, the claude-history sidecar path,
+    build_filename, build_session_dirname) see identical already-capped
+    strings. See session_naming.NAME_MAX_BYTES for the budget math.
+    """
     username = os.environ.get("USER") or os.environ.get("USERNAME", "unknown")
+    username = cap_field(username, USERNAME_MAX_BYTES)
     session_name = get_session_name(tool_info.session_id, tool_info.transcript_path)
+    if session_name:
+        session_name = cap_session_name(session_name)
 
     # Check for tmux
     tmux_session = detect_tmux_session()
@@ -213,8 +230,10 @@ def build_session_context(tool_info: ToolInfo) -> SessionContext:
         shell_type = detect_shell_type()
 
     # tmux session names are user-controlled free text and may contain
-    # `__` -- the filename-format delimiter. Collapse before embedding.
-    shell_type = collapse_delimiter(shell_type)
+    # `__` -- the filename-format delimiter. Collapse before embedding,
+    # then cap (tmux names are unbounded; a long shell eats the shared
+    # 255-byte filename budget just like a long session name would).
+    shell_type = cap_field(collapse_delimiter(shell_type), SHELL_MAX_BYTES)
 
     return SessionContext(
         shell_type=shell_type,

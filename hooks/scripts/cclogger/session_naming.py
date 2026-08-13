@@ -268,6 +268,71 @@ def collapse_delimiter(value: str) -> str:
     return re.sub(r'_{2,}', '_', value)
 
 
+# ============================================================================
+# Filename-field length caps (#52)
+# ============================================================================
+#
+# Every field embedded in a log filename/dirname shares one NAME_MAX-byte
+# (= 255; see dazzle_filekit.NAME_MAX, asserted by the budget guard test)
+# filesystem component budget (Linux NAME_MAX counts BYTES; Windows NTFS
+# counts UTF-16 units -- bytes is the stricter reading for ASCII-dominant
+# names). Four fields are unbounded at their source: the session name
+# (user-authored), the shell (tmux session names), the subtype
+# (subagent_type), and the username (env). #52 was the name field blowing
+# the budget: the hook survived (post-hardening) but every write failed,
+# so the session logged nothing.
+#
+# The caps below are FIXED constants, deliberately not computed per-file:
+# a per-file budget would truncate the same name differently under
+# different shells/channels, and the reconciler compares those strings --
+# divergence there is the churn class the 2026-08-12 delimiter fix (#51)
+# exists to prevent. Fixed caps make every consumer agree by construction.
+#
+# Budget math (worst case, all caps stacked), asserted by
+# test_filename_length_cap.py::test_budget_arithmetic:
+#   prefix(<=39 incl. subtype) + shell(40) + '__' + name(100) + '--NNN'(5)
+#   + '__' + guid(36) + '_' + user(20) + '.log'(4)  =  249  <=  255
+#
+# Measured population (2026-08-12, 431 real session dirs): longest name
+# 94 bytes, mean 27, p95 61 -- NAME_MAX_BYTES=100 leaves every real name
+# byte-identical. The caps exist for the adversarial tail, not the norm.
+NAME_MAX_BYTES = 100
+SHELL_MAX_BYTES = 40
+SUBTYPE_MAX_BYTES = 24
+USERNAME_MAX_BYTES = 20
+
+
+def cap_field(value: str, max_bytes: int) -> str:
+    """Truncate `value` to at most `max_bytes` UTF-8 bytes, safely.
+
+    - Byte-aware: never splits a multibyte character (decode with
+      errors="ignore" drops a partial trailing sequence).
+    - Trims trailing `_` after the cut so a truncation landing between
+      the two underscores of a `__` cannot leave a dangling half-delimiter
+      adjacent to the structural `__` that follows the field.
+    - No-op for values already within budget (the overwhelmingly common
+      case -- see population stats above).
+    """
+    if len(value.encode("utf-8")) <= max_bytes:
+        return value
+    capped = value.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+    return capped.rstrip("_")
+
+
+def cap_session_name(name: str) -> str:
+    """Cap a session name for filename embedding (#52).
+
+    Applied at the two name INPUT boundaries -- build_session_context()
+    (transcript/cache lookup) and get_effective_session_name() (on-disk
+    recovery) -- so every downstream consumer (get_filename_context, the
+    claude-history sidecar path, build_filename, build_session_dirname)
+    receives the identical already-capped string. The name-cache keeps the
+    RAW name for display/round-trip; only filename construction sees the
+    capped form, and only for names past the budget.
+    """
+    return cap_field(name, NAME_MAX_BYTES)
+
+
 def sanitize_dirname(name: str, max_len: int = 200) -> str:
     """Sanitize session name for filesystem safety.
 

@@ -5,13 +5,13 @@ All notable changes to claude-session-logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.8] - 2026-08-12
+## [0.3.9] - 2026-08-12
 
-Delimiter-collision fix release: session names and tmux-derived shell strings
-containing `__` (the log-filename field delimiter) no longer corrupt filenames.
-Also realigns the published version metadata (previous `main` carried v0.3.7-pre
-code while still declaring 0.3.6, making new pushes invisible to
-`claude plugin update`).
+Completes #52 (over-long session names silently disabled all logging). Released as
+0.3.9 rather than folded into 0.3.8 because branch-built 0.3.8 installations are
+already deployed; a release re-using the 0.3.8 number would be invisible to
+`claude plugin update` on those boxes — the same version-metadata trap 0.3.8
+itself fixed.
 
 ### Fixed
 - **An unreadable config path could kill the entire hook** (#52, catastrophic half):
@@ -28,6 +28,43 @@ code while still declaring 0.3.6, making new pushes invisible to
   rather than building a real over-long filename, because the natural repro is
   Linux-only (Windows maps the condition to an ignored winerror and returns `False`),
   which would make a filesystem-based test silently no-op on Windows.
+- **Over-long session names now LOG instead of silently vanishing** (#52, second
+  half). Root cause was a budget asymmetry: the directory name was already capped
+  (~209-char name budget) but filenames were not, and the narrowest consumer (the
+  `claude-history-<ctx>.json` sidecar, 179-char budget) blew the 255-byte component
+  limit first — a name in the 30-char gap produced a *valid directory* and *zero
+  files*. Four unbounded fields shared that one budget: session name (user-authored),
+  shell (tmux session names), subtype (`subagent_type`), and username (env). All four
+  are now capped with fixed byte-aware constants (`NAME_MAX_BYTES=100`,
+  `SHELL_MAX_BYTES=40`, `SUBTYPE_MAX_BYTES=24`, `USERNAME_MAX_BYTES=20` in
+  `session_naming.py`), applied **once, at the name input boundaries** —
+  `build_session_context()` and `get_effective_session_name()`'s on-disk recovery —
+  so every consumer (`get_filename_context`, the sidecar path, `build_filename`,
+  `build_session_dirname`) sees the identical capped string. Fixed constants rather
+  than per-file budgets are deliberate: per-file truncation would rename the same
+  session differently under different shells/channels — the churn class the
+  delimiter-collision fix (#51) exists to prevent. Worst-case arithmetic
+  (`prefix + shell + name + --NNN + guid + user + .log` = 249 ≤ 255) is asserted by
+  a constant-drift guard test, so a future prefix/cap change fails loudly. Measured
+  against all 431 real session dirs on the dev box (longest name 94 bytes): every
+  real name passes through byte-identical; the caps bind only in the adversarial
+  tail. 16 new tests including a real-hook-subprocess E2E: a 250-char name yields
+  one file per channel, entries written, no FATAL, and a byte-identical filename
+  set across three restarts. Mutation-verified (7 killed + 1 documented-redundancy
+  survivor) and live-verified on the dev box per
+  `tests/checklists/v0.3.9__Fix__issue-52-filename-length-cap.md`. On Windows,
+  `MAX_PATH` (full-path, 260) can still bind before the 255 component limit in
+  deeply nested home dirs — out of scope here, noted for #16.
+
+## [0.3.8] - 2026-08-12
+
+Delimiter-collision fix release: session names and tmux-derived shell strings
+containing `__` (the log-filename field delimiter) no longer corrupt filenames.
+Also realigns the published version metadata (previous `main` carried v0.3.7-pre
+code while still declaring 0.3.6, making new pushes invisible to
+`claude plugin update`).
+
+### Fixed
 - **Delimiter-collision filename growth loop** (live repro 2026-08-12): a session named
   `2026-8-12__zeromeld.org__reddit-slack-fixes` in tmux session
   `redditslack_2026-08-12_updating-users` gained a `{shell}__{segment}__` insertion
@@ -64,16 +101,6 @@ code while still declaring 0.3.6, making new pushes invisible to
   out of the box since `agents` defaults to `subtype_split: True`. Subtype sanitizer
   now maps illegal chars AND `_` to `-` (collapsing runs), enforcing the
   "channel basenames never contain `_`" invariant end to end.
-
-### Known issues (pre-existing, partially mitigated)
-- **Session names longer than ~200 chars still cannot be logged** (#52). The
-  catastrophic half is fixed in this release (see "unreadable config path" under
-  Fixed): the hook no longer dies before writing anything. What remains is that
-  channel filenames built from an over-long name still exceed `NAME_MAX`, so the
-  writes themselves fail and the entries end up dropped rather than logged. The
-  real fix is a length cap applied once at the filename-context level — tracked in
-  #52, and subsumed durably by #16 (FilenameBuilder). On Windows, `MAX_PATH` lowers
-  the threshold further.
 
 ### Added
 - **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied to
