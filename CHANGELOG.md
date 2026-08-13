@@ -14,6 +14,20 @@ code while still declaring 0.3.6, making new pushes invisible to
 `claude plugin update`).
 
 ### Fixed
+- **An unreadable config path could kill the entire hook** (#52, catastrophic half):
+  `load_config_file()` opened with `if not path.exists(): return {}` placed *outside*
+  its `try`. `pathlib.Path.exists()` only swallows the errnos in
+  `pathlib._IGNORED_ERRNOS` (`ENOENT`, `ENOTDIR`, `EBADF`, `ELOOP`) and re-raises
+  everything else — so on Linux an over-long `claude-history-<ctx>.json` path raised
+  `ENAMETOOLONG`, escaped the function, and killed the hook **before it wrote
+  anything**: zero log files for the session, and the hook still exits 0 so nothing
+  surfaced to the user. The pre-check is now removed entirely; `open()` inside the
+  existing `try` already reports a missing file as `FileNotFoundError`, so it never
+  bought anything. Any unreadable path — over-long, permission-denied, I/O error — is
+  now correctly treated as "no config present". Regression tests force the errno
+  rather than building a real over-long filename, because the natural repro is
+  Linux-only (Windows maps the condition to an ignored winerror and returns `False`),
+  which would make a filesystem-based test silently no-op on Windows.
 - **Delimiter-collision filename growth loop** (live repro 2026-08-12): a session named
   `2026-8-12__zeromeld.org__reddit-slack-fixes` in tmux session
   `redditslack_2026-08-12_updating-users` gained a `{shell}__{segment}__` insertion
@@ -51,11 +65,15 @@ code while still declaring 0.3.6, making new pushes invisible to
   now maps illegal chars AND `_` to `-` (collapsing runs), enforcing the
   "channel basenames never contain `_`" invariant end to end.
 
-### Known issues (pre-existing, deferred)
-- Session names longer than ~200 chars crash filename construction for the
-  per-context `claude-history-*.json` sidecar (`File name too long`), silently
-  disabling logging for that session (hook still exits 0). Predates this release;
-  needs a length cap at the filename-context level. Tracked for 0.3.9.
+### Known issues (pre-existing, partially mitigated)
+- **Session names longer than ~200 chars still cannot be logged** (#52). The
+  catastrophic half is fixed in this release (see "unreadable config path" under
+  Fixed): the hook no longer dies before writing anything. What remains is that
+  channel filenames built from an over-long name still exceed `NAME_MAX`, so the
+  writes themselves fail and the entries end up dropped rather than logged. The
+  real fix is a length cap applied once at the filename-context level — tracked in
+  #52, and subsumed durably by #16 (FilenameBuilder). On Windows, `MAX_PATH` lowers
+  the threshold further.
 
 ### Added
 - **`collapse_delimiter()`** (`session_naming.py`): collapses `_{2,}` -> `_`. Applied to

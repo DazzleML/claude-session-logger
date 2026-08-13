@@ -25,9 +25,19 @@ from cclogger.models import Config
 
 
 def load_config_file(path: Path) -> dict[str, Any]:
-    """Load a JSON config file, returning empty dict on failure."""
-    if not path.exists():
-        return {}
+    """Load a JSON config file, returning empty dict on failure.
+
+    Deliberately has NO `path.exists()` pre-check: `Path.exists()` only
+    swallows the errnos in `pathlib._IGNORED_ERRNOS` (ENOENT, ENOTDIR,
+    EBADF, ELOOP) and re-raises everything else. On Linux an over-long
+    filename raises ENAMETOOLONG, which escaped this function entirely
+    when the check sat outside the `try` -- killing all logging for the
+    session (#52). `open()` inside the `try` already reports a missing
+    file as FileNotFoundError, so the pre-check bought nothing.
+
+    Config files here are optional user-authored overrides; any path we
+    cannot read is correctly treated as "not present".
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
