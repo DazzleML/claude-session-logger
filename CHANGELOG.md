@@ -4,6 +4,11 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] - 2026-08-13
+
+### Changed
+- **`scripts-repo/local/` flattened away**: with the subtree now nested at `scripts-repo/repokit-common/` (v0.3.12), the `local/` wrapper's original purpose -- disambiguating project tools from upstream files sharing one flat directory -- no longer exists. Project-local tools (`generate_channel_docs.py`, `dev-refresh.py`, `diff-harness.py`, `audit_codebase.py`, the one-shot cleanup script, `pre-commit-basic`) now live directly at `scripts-repo/` root beside `repokit-common/`, matching the sibling-repo convention. The lone `hooks/pre-commit-basic` also lost its single-file `hooks/` wrapper (which name-shadowed `repokit-common/hooks/` without interacting with it -- the upstream installer is strictly self-relative). Generator path depth fixed accordingly; drift guard re-verified.
+
 ## [0.3.12] - 2026-08-13
 
 Dev-tooling reorganization; no runtime changes.

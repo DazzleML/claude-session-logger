@@ -1,6 +1,6 @@
 # Channels Reference
 
-Auto-generated from the `hooks/scripts/cclogger/` package (`categorize.py` + `models.py` defaults). Do not edit by hand -- regenerate with `python scripts-repo/local/generate_channel_docs.py`.
+Auto-generated from the `hooks/scripts/cclogger/` package (`categorize.py` + `models.py` defaults). Do not edit by hand -- regenerate with `python scripts-repo/generate_channel_docs.py`.
 
 ## Channels
 

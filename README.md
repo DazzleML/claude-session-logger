@@ -136,7 +136,9 @@ claude-session-logger/
 │   │   ├── install-hooks.sh
 │   │   ├── sync-versions.py  # Version sync (configured via pyproject.toml)
 │   │   └── ...               # issue/backlink/sesslog tooling
-│   └── local/                # Project-local tooling (not from upstream)
+│   ├── generate_channel_docs.py  # Project-local tooling at scripts-repo root
+│   ├── dev-refresh.py / diff-harness.py / audit_codebase.py
+│   └── pre-commit-basic     # manual fallback hook variant
 │       ├── audit_codebase.py    # git-commit function-diff tool
 │       ├── dev-refresh.py       # Clear plugin cache during development
 │       ├── diff-harness.py      # Differential test harness for sync-versions

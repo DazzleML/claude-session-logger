@@ -4,7 +4,7 @@
 Produces a markdown reference table grouping by channel -> category -> tools.
 Run from project root:
 
-    python scripts-repo/local/generate_channel_docs.py
+    python scripts-repo/generate_channel_docs.py
 
 Writes to: docs/channels.md
 
@@ -17,7 +17,7 @@ the 2026-08-13 #41 docs pass.
 import sys
 from pathlib import Path
 
-HOOKS_DIR = Path(__file__).parent.parent.parent / "hooks" / "scripts"
+HOOKS_DIR = Path(__file__).parent.parent / "hooks" / "scripts"
 sys.path.insert(0, str(HOOKS_DIR))
 
 from cclogger.categorize import TOOL_CATEGORIES, SUBTYPE_EXTRACTORS  # noqa: E402
@@ -52,7 +52,7 @@ def generate_markdown() -> str:
     lines.append("Auto-generated from the `hooks/scripts/cclogger/` package "
                  "(`categorize.py` + `models.py` defaults). "
                  "Do not edit by hand -- regenerate with "
-                 "`python scripts-repo/local/generate_channel_docs.py`.")
+                 "`python scripts-repo/generate_channel_docs.py`.")
     lines.append("")
 
     lines.append("## Channels")
@@ -230,7 +230,7 @@ def generate_markdown() -> str:
 
 
 def main():
-    output_path = Path(__file__).parent.parent.parent / "docs" / "channels.md"
+    output_path = Path(__file__).parent.parent / "docs" / "channels.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     content = generate_markdown()
     output_path.write_text(content, encoding="utf-8")
