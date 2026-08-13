@@ -146,6 +146,34 @@ def _warn_unknown_role_once(role: str) -> None:
         pass
 
 
+UNKNOWN_COLLECT_KEY_WARN_DIR = UNKNOWN_ROLE_WARN_DIR.parent / ".unknown_collect_key_warnings"
+
+
+def _warn_unknown_collect_key_once(key: str) -> None:
+    """One-time warning for a ChannelOptions.collect key this version
+    doesn't recognize (#53). Sibling sentinel dir, same pattern as the
+    unknown-tool/role warnings. Unknown keys are IGNORED (not errors) so
+    configs written for newer plugin versions degrade gracefully here.
+
+    Best-effort -- silent on errors so the hook itself never breaks.
+    """
+    try:
+        UNKNOWN_COLLECT_KEY_WARN_DIR.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^A-Za-z0-9_\-.]", "_", key)
+        sentinel = UNKNOWN_COLLECT_KEY_WARN_DIR / f"{safe_name}.warned"
+        try:
+            sentinel.open("x").close()
+        except FileExistsError:
+            return
+        debug_log(
+            f"Unknown collect key '{key}' in channel options - ignored. "
+            f"Recognized keys this version: see COLLECT_RECOGNIZED_KEYS in "
+            f"cclogger/models.py (config may be from a newer plugin version)"
+        )
+    except Exception:
+        pass
+
+
 def debug_log(message: str) -> None:
     """Append debug message to log file."""
     try:

@@ -34,8 +34,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from cclogger.debug import debug_log
+from cclogger.debug import _warn_unknown_collect_key_once, debug_log
 from cclogger.models import (
+    COLLECT_RECOGNIZED_KEYS,
     HINT_VERBOSITY_KEYS,
     ChannelConfig,
     ChannelOptions,
@@ -149,6 +150,25 @@ def apply_override_channel_options(
             target.subtype_split = [item for item in v if isinstance(item, str)]
         elif v is None:
             target.subtype_split = False
+
+    if "collect" in override:
+        v = override["collect"]
+        if v is None:
+            target.collect = None
+        elif isinstance(v, dict):
+            # Same value grammar as subtype_split: True = any, list = named.
+            # Unknown keys warn once and are ignored (forward-compat).
+            cleaned: dict[str, Any] = {}
+            for key, val in v.items():
+                if key not in COLLECT_RECOGNIZED_KEYS:
+                    _warn_unknown_collect_key_once(str(key))
+                    continue
+                if val is True:
+                    cleaned[key] = True
+                elif isinstance(val, list):
+                    cleaned[key] = [item for item in val if isinstance(item, str)]
+                # False / other shapes -> no predicate for this key
+            target.collect = cleaned or None
 
 
 def apply_override_channel_config(

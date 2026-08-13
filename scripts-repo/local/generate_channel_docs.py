@@ -153,6 +153,18 @@ def generate_markdown() -> str:
 
     lines.append("## Tools by Category")
     lines.append("")
+    lines.append(
+        "The tool names below (`Bash`, `Read`, `Agent`, ...) are **Claude "
+        "Code's own vocabulary** -- they arrive verbatim in the hook "
+        "payload. The categories grouping them are **ours**: a "
+        "classification layer this plugin maintains over that vocabulary, "
+        "so routing survives tool churn upstream. When Claude Code ships "
+        "a new tool it gets classified once here; until then the "
+        "`unknown` category catches it (and the `unknowns` channel makes "
+        "it visible). The mapping chain: their names -> our categories -> "
+        "our channels."
+    )
+    lines.append("")
     for cat in sorted(by_cat.keys()):
         chs = routes.get(cat, routes.get("_default", []))
         chs_str = ", ".join(f"`{c}`" for c in chs)

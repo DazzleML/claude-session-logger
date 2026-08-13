@@ -128,6 +128,16 @@
                       {"type": "boolean"},
                       {"type": "array", "items": {"type": "string"}}
                     ]
+                  },
+                  "collect": {
+                    "description": "#53 emitter/collector predicate: entries this channel ADDITIONALLY collects, keyed by entry attribute name. This version recognizes 'agent_context' (a subagent's internal tool calls + its final report); unknown keys warn once and are ignored so configs from newer versions degrade gracefully. Values: true = collect any entry with the attribute set; list[str] = collect only listed attribute values (e.g. [\"oracle\", \"help\"]). Additive -- collected entries keep every channel their category route gave them. Default {\"agent_context\": true} on the agents channel only; collected entries split by the attribute value when subtype_split is enabled (.agents-explore_*, ...).",
+                    "type": ["object", "null"],
+                    "additionalProperties": {
+                      "oneOf": [
+                        {"type": "boolean"},
+                        {"type": "array", "items": {"type": "string"}}
+                      ]
+                    }
                   }
                 }
               }

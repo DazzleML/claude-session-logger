@@ -128,31 +128,47 @@ SUBTYPE_EXTRACTORS: dict[str, "Any"] = {
 }
 
 
+def normalize_subtype(value: Any) -> Optional[str]:
+    """Normalize any raw subtype value into a channel-basename-safe token.
+
+    The single choke point for ALL subtype sources -- category extractors
+    below AND the agent-context collect path (#53) -- mirroring the #52
+    cap-at-input-boundary philosophy. Three transforms, in order:
+
+    1. Lowercase: makes greps case-stable and file identity
+       platform-independent (`Explore` vs `explore` would be two files on
+       Linux but one on Windows; verbatim passthrough caused exactly that
+       -- `.agents-Explore_*` -- before #53).
+    2. Sanitize for filesystem safety. Subtypes become part of the
+       channel basename (`.agents-{subtype}_...`), and channel basenames
+       must never contain `_` -- the filename parses
+       (discover_channel_basenames, _embedded_session_name) rely on that
+       invariant to split fields. A snake_case subagent_type like
+       "my_snake_agent" would otherwise be mis-discovered as phantom
+       basename "agents-my" and re-trigger the delimiter-collision
+       growth loop (2026-08-12 fix).
+    3. Length cap (#52): subtypes share the 255-byte filename component
+       budget with the shell, name, guid, and username fields. See
+       session_naming.SUBTYPE_MAX_BYTES.
+
+    Self-contained (str in, str-or-None out) by design -- export
+    candidate for dazzle-loglib.
+    """
+    if not value:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9\-.]", "-", str(value).lower())
+    safe = re.sub(r"-{2,}", "-", safe)
+    out = cap_field(safe, SUBTYPE_MAX_BYTES).rstrip("-.")
+    return out or None
+
+
 def get_subtype(category: str, tool_name: str, raw_json: dict[str, Any]) -> Optional[str]:
     """Get the subtype for a tool, or None if no extractor / no subtype."""
     extractor = SUBTYPE_EXTRACTORS.get(category)
     if extractor is None:
         return None
     try:
-        subtype = extractor(tool_name, raw_json)
-        if subtype:
-            # Sanitize for filesystem safety. Subtypes become part of the
-            # channel basename (`.agents-{subtype}_...`), and channel
-            # basenames must never contain `_` -- the filename parses
-            # (discover_channel_basenames, _embedded_session_name) rely on
-            # that invariant to split fields. A snake_case subagent_type
-            # like "my_snake_agent" would otherwise be mis-discovered as
-            # phantom basename "agents-my" and re-trigger the
-            # delimiter-collision growth loop (2026-08-12 fix).
-            safe = re.sub(r"[^A-Za-z0-9\-.]", "-", str(subtype))
-            safe = re.sub(r"-{2,}", "-", safe)
-            # Length cap (#52): subtypes become part of the channel prefix
-            # (`.agents-{subtype}_...`), which shares the 255-byte filename
-            # component budget with the shell, name, guid, and username
-            # fields. An unbounded subagent_type would eat the budget the
-            # name caps protect. See session_naming.SUBTYPE_MAX_BYTES.
-            return cap_field(safe, SUBTYPE_MAX_BYTES).rstrip("-.")
-        return None
+        return normalize_subtype(extractor(tool_name, raw_json))
     except Exception:
         return None
 

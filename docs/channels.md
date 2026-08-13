@@ -55,6 +55,8 @@ Per-server ADDITIVE routing for `mcp__<server>__*` tools (`routing.mcp_server_ro
 
 ## Tools by Category
 
+The tool names below (`Bash`, `Read`, `Agent`, ...) are **Claude Code's own vocabulary** -- they arrive verbatim in the hook payload. The categories grouping them are **ours**: a classification layer this plugin maintains over that vocabulary, so routing survives tool churn upstream. When Claude Code ships a new tool it gets classified once here; until then the `unknown` category catches it (and the `unknowns` channel makes it visible). The mapping chain: their names -> our categories -> our channels.
+
 ### `bash` -> `shell`, `sesslog`, `tools`
 
 - `Bash`

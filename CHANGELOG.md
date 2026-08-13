@@ -4,6 +4,21 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] - 2026-08-13
+
+The agents channel becomes what its name promises: each `.agents-<type>_*` file is now the complete story of that agent. Verified by 30 new tests, an 11-mutation kill matrix, an independent tester pass, a live smoke on the development box itself, and a byte-identical snapshot for agent-free sessions.
+
+### Added
+- **`.agents-<type>_*` files now carry the agent's full story** (#53): dispatch prompt, every internal tool call the subagent ran (attributed `{Bash|Explore: ...}`), and its final report — previously the file held only the dispatch (2,898 bytes for a 68-tool-call run in the live probe that found this) while the work scattered, attributed but uncollected, across shell/tools/sesslog and the report landed unattributed in convo. Mechanism is the **emitter/collector model**: entries are emitted carrying attributes; a channel's new `ChannelOptions.collect` predicate (`{attribute: true | ["value", ...]}`) declares which it additionally receives. Additive — collected entries keep every category-route channel. The `agents` channel defaults `collect: {"agent_context": true}`; any channel may declare `collect` (define your own collector channel entirely in config). The evaluator resolves attributes generically — a future collection axis is a whitelist entry plus an emitted attribute, never a router change — enforced by a second-axis rehearsal test. Unknown `collect` keys warn once and are ignored (configs from newer versions degrade gracefully).
+- **Subtype-source rule**: a channel collected via attribute K splits by the entry's K value — a Bash call inside the Explore agent expands `agents` to `.agents-explore_*`, never `.agents-bash_*`; category-routed channels keep the category extractor's subtype. Expansion no longer aborts when the category has no extractor but a collected subtype exists (Read-inside-agent now expands correctly).
+- **SubagentStop report fallback**: newer Claude Code CLIs keep subagent turns in sidechain transcript files (never the main transcript the handler reads) but deliver the final report directly on the payload as `last_assistant_message` — now used as the fallback source, so the report leg cannot silently vanish; report entries also carry the agent's identity (`agent_context`), the data #50 needs.
+
+### Changed
+- **Agent detection is now `agent_id`-gated** (the platform's documented discriminator): `agent_id` is present if and only if the event fired inside a subagent. The previous speculative field walk keyed on `agent_type`, which would have mislabeled the entire main thread of a `--agent`-launched session as subagent traffic (regression-guarded). Identity still comes from `agent_type`.
+- **Subtype values are normalized at one choke point** (`normalize_subtype()`: lowercase + filesystem sanitize + byte cap): `.agents-Explore_*` becomes `.agents-explore_*` for new writes, making greps case-stable and file identity platform-independent (verbatim passthrough previously meant two files on Linux vs one on Windows for the same agent). Legacy capital-case files are not quarantined and coexist; on Windows they simply keep receiving appends.
+- **`agents` channel default verbosity** is now the sesslog-shaped per-role dict (`_default: full` with `write`/`edit`/`multi-edit`/`notebook-edit` capped at 20 chars and `task-output` at 200) so collecting a long agent run cannot balloon the file.
+- `docs/configuration.md` gains the "Channel Options" reference (all seven options incl. `collect` and the per-role verbosity hierarchy) and the vocabulary-provenance mental model (Claude Code's tool names → our categories → our channels).
+
 ## [0.3.10] - 2026-08-13
 
 Documentation-integrity release (#41 wave 1): the channel reference and shipped presets had drifted from the code — in two cases teaching config that the merge silently ignores. No runtime behavior changes.

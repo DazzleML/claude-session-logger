@@ -42,6 +42,15 @@ HINT_VERBOSITY_KEYS: set[str] = {"max_chars", "max_lines"}
 PER_ROLE_RESERVED_KEYS: set[str] = {"_default"}
 RESERVED_VERBOSITY_KEYS: set[str] = HINT_VERBOSITY_KEYS | PER_ROLE_RESERVED_KEYS
 
+# ChannelOptions.collect predicate keys recognized by THIS version (#53).
+# The evaluator resolves keys generically against LogEntry attributes
+# (AC-10: attribute-generality) -- this whitelist exists only for config
+# validation, so a config written for a NEWER plugin version degrades
+# gracefully on this one (unknown key -> warn once, ignore) instead of
+# erroring. Adding a collection axis = add the key here + populate the
+# LogEntry attribute at emission; the router needs no change.
+COLLECT_RECOGNIZED_KEYS: set[str] = {"agent_context"}
+
 
 # `parse_bool` and `_validate_per_role_dict` live in cclogger/config_merge.py.
 # Per the v0.3.7-pre Phase 6 refactor, models.py keeps to pure data
@@ -154,6 +163,17 @@ class ChannelOptions:
     # The expander iterates the ORIGINAL channel list, not the expanded list, so
     # there is no recursion (`.agents-help_*` never becomes `.agents-help-bash_*`).
     subtype_split: Union[bool, list] = False
+    # Emitter/collector predicate (#53): entries are emitted carrying
+    # attributes (agent_context, ...); a channel declares which it
+    # additionally collects, keyed by LogEntry attribute name:
+    #   {"agent_context": True}           -- collect any entry with the attr set
+    #   {"agent_context": ["oracle"]}     -- collect only listed attr values
+    # Evaluated GENERICALLY by attribute name (AC-10: a future axis is a
+    # COLLECT_RECOGNIZED_KEYS entry + emission-side attribute, never a
+    # router rewrite). Additive -- collected entries keep every channel
+    # their category route gave them. Unknown keys warn once and are
+    # ignored (configs from newer versions degrade gracefully).
+    collect: Optional[dict] = None
 
 
 # ============================================================================
@@ -193,39 +213,25 @@ class ToolInfo:
     def _detect_agent_context(data: dict[str, Any]) -> Optional[str]:
         """Detect if this tool call is from a subagent and return agent type.
 
-        Checks various possible fields that might indicate agent context.
-        Returns the agent type (e.g., "Explore", "Plan") or None if main session.
+        Evidence-based discriminator (#53; platform research + live hook
+        traffic, CLI 2.1.229): the payload's `agent_id` is present if and
+        only if the event fired from inside a subagent -- it is the field
+        the official hook schema documents for exactly this distinction.
+        `agent_type` alone is NOT sufficient: a session launched with
+        `--agent` carries `agent_type` on its MAIN thread (without
+        `agent_id`), and keying on it would mislabel that entire session
+        as subagent traffic (#53 AC-2 regression-guards this). The
+        pre-#53 implementation walked speculative field names
+        (subagent_type, parent_agent, ...) that never appeared in real
+        payloads; deleted, not deprecated.
+
+        Identity comes from `agent_type` (e.g. "Explore", "oracle"),
+        falling back to `agent_id` if type is somehow absent.
         """
-        # Check for explicit agent context fields (these are speculative -
-        # we'll refine based on actual JSON structure observed in debug logs)
-        possible_fields = [
-            "subagent_type",
-            "agent_type",
-            "agent_context",
-            "parent_agent",
-            "spawned_by",
-        ]
-
-        for field in possible_fields:
-            value = data.get(field)
-            if value:
-                debug_log(f"Found agent context field '{field}': {value}")
-                return str(value)
-
-        # Check for nested agent info
-        if "agent" in data and isinstance(data["agent"], dict):
-            agent_type = data["agent"].get("type") or data["agent"].get("subagent_type")
-            if agent_type:
-                debug_log(f"Found nested agent type: {agent_type}")
-                return str(agent_type)
-
-        # Check tool_params for agent context (Task tool stores subagent_type there)
-        tool_params = data.get("tool_params", {})
-        if isinstance(tool_params, dict):
-            agent_type = tool_params.get("subagent_type")
-            if agent_type:
-                debug_log(f"Found agent type in tool_params: {agent_type}")
-                return str(agent_type)
+        if data.get("agent_id"):
+            agent_type = data.get("agent_type") or data.get("agent_id")
+            debug_log(f"Agent context: agent_type={agent_type}")
+            return str(agent_type)
 
         return None
 
@@ -381,7 +387,25 @@ def _default_channels() -> dict[str, ChannelConfig]:
         # channels stay single-file unless the user explicitly opts in.
         "agents": ChannelConfig(
             file_prefix=".agents_",
-            options=ChannelOptions(verbosity="full", subtype_split=True),
+            options=ChannelOptions(
+                # #53: the agents channel collects every entry carrying
+                # agent context (a subagent's internal tool calls + its
+                # SubagentStop report), in addition to the meta-category
+                # dispatch it already receives -- so .agents-<type>_* is
+                # the complete story of that agent. Verbosity mirrors the
+                # sesslog shape: full story, file-sized payload roles
+                # capped so a 90-tool agent run cannot balloon the file.
+                verbosity={
+                    "_default": "full",
+                    "write": {"max_chars": 20},
+                    "edit": {"max_chars": 20},
+                    "multi-edit": {"max_chars": 20},
+                    "notebook-edit": {"max_chars": 20},
+                    "task-output": {"max_chars": 200},
+                },
+                subtype_split=True,
+                collect={"agent_context": True},
+            ),
         ),
     }
 

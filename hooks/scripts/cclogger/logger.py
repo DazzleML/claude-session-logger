@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from cclogger import paths
-from cclogger.categorize import get_subtype
+from cclogger.categorize import get_subtype, normalize_subtype
 from cclogger.debug import debug_log
 from cclogger.file_io import (
     atomic_append,
@@ -294,7 +294,8 @@ class SessionLogger:
         channels: list[str],
         tool_name: str,
         tool_category: str,
-        raw_json: Optional[dict[str, Any]] = None
+        raw_json: Optional[dict[str, Any]] = None,
+        collect_sources: Optional[dict[str, str]] = None,
     ) -> list[str]:
         """Expand channel list with per-subtype channels per channel opt-in.
 
@@ -308,16 +309,26 @@ class SessionLogger:
           - subtype_split = True            : expand for any subtype
           - subtype_split = ["help", "X"]   : expand only for listed subtypes
 
+        Subtype SOURCE rule (#53): when a channel is in the route because
+        its `collect` predicate matched attribute K (see
+        `_collect_channels_for_entry`), that channel splits by the ENTRY's
+        K value, not by the category extractor -- a Bash call inside the
+        Explore agent expands `agents` to `.agents-explore_*`, never
+        `.agents-bash_*`. Channels routed by category keep the category
+        extractor's subtype. The category subtype being absent no longer
+        aborts expansion when a collect-derived subtype exists (the
+        pre-#53 early return would have skipped e.g. Read-inside-agent,
+        whose category has no extractor).
+
         Iterates the ORIGINAL channel list, NOT the expanded list -- this is
         the no-recursion guarantee. `.agents-help_*` never chains further to
         `.agents-help-bash_*` even if multiple categories have extractors.
         """
-        if raw_json is None:
-            return channels  # Cannot extract subtype without raw_json
-
-        subtype = get_subtype(tool_category, tool_name, raw_json)
-        if not subtype:
-            return channels  # No meaningful subtype to attach
+        category_subtype: Optional[str] = None
+        if raw_json is not None:
+            category_subtype = get_subtype(tool_category, tool_name, raw_json)
+        if not category_subtype and not collect_sources:
+            return channels  # No subtype from any source
 
         expanded = list(channels)
         for base_channel in channels:  # iterate ORIGINAL list -- no recursion
@@ -328,12 +339,61 @@ class SessionLogger:
             split = opts.subtype_split
             if not split:
                 continue
+            # Subtype source rule: collect-derived value wins for the
+            # channel that collected this entry; category subtype otherwise.
+            subtype = None
+            if collect_sources:
+                subtype = collect_sources.get(base_channel)
+            if subtype is None:
+                subtype = category_subtype
+            if not subtype:
+                continue
             if isinstance(split, list) and subtype not in split:
                 continue
             subtype_channel = f"{base_channel}-{subtype}"
             if subtype_channel not in expanded:
                 expanded.append(subtype_channel)
         return expanded
+
+    def _collect_channels_for_entry(self, entry: Any) -> dict[str, str]:
+        """Evaluate every channel's `collect` predicate against an emitted
+        entry (#53 emitter/collector step).
+
+        Returns {channel_name: normalized_attribute_value} for each channel
+        whose predicate matched -- the value doubles as that channel's
+        subtype for expansion (subtype-source rule).
+
+        Attribute-GENERIC by design (AC-10): predicates are resolved with
+        getattr(entry, key) -- no attribute name is special-cased here, so a
+        new collection axis is a COLLECT_RECOGNIZED_KEYS entry plus an
+        emission-side attribute, never an edit to this evaluator. Matching
+        is on normalize_subtype()-normalized values on BOTH sides, so
+        config lists are case-insensitive and agree with file naming.
+        Entries without the attribute (including transitional plain-string
+        entries) simply never match. Additive: callers UNION the result
+        into the category route.
+        """
+        results: dict[str, str] = {}
+        for name, channel_obj in self.config.routing.channels.items():
+            opts = self._resolve_channel_options(channel_obj, name)
+            if opts is None or not opts.collect:
+                continue
+            for key, spec in opts.collect.items():
+                raw = getattr(entry, key, None)
+                if not raw:
+                    continue
+                normalized = normalize_subtype(raw)
+                if not normalized:
+                    continue
+                if spec is True:
+                    results[name] = normalized
+                    break
+                if isinstance(spec, list):
+                    wanted = {normalize_subtype(s) for s in spec}
+                    if normalized in wanted:
+                        results[name] = normalized
+                        break
+        return results
 
     def log_entry(
         self,
@@ -364,17 +424,34 @@ class SessionLogger:
 
         # Get channels to write to based on routing config
         channels = self._get_channels_for_tool(tool_name, tool_category)
+        # #53 emitter/collector: union in channels whose collect predicate
+        # matches this entry's attributes (e.g. agents collects everything
+        # carrying agent_context). Additive -- category channels all stay.
+        collect_sources = self._collect_channels_for_entry(entry)
+        for collected_channel in collect_sources:
+            if collected_channel not in channels:
+                channels.append(collected_channel)
         # Expand with subtype channels (no-op if subtype routing not configured)
         channels = self._expand_with_subtype_channels(
-            channels, tool_name, tool_category, raw_json
+            channels, tool_name, tool_category, raw_json,
+            collect_sources=collect_sources,
         )
 
         # Track time gaps per channel to avoid duplicate gap checks
         gap_cache: dict[Path, bool] = {}
 
         for channel_name in channels:
-            # Check if channel is enabled
+            # Check if channel is enabled. Derived "<base>-<subtype>" names
+            # inherit the BASE channel's enabled flag (tester finding P3,
+            # #53 verification): disabling `agents` must suppress the
+            # `.agents-<type>_*` siblings too, not just the base file --
+            # previously the literal-only lookup silently treated every
+            # derived name as enabled. Same literal-first-then-base idiom
+            # as _get_channel_path / _resolve_channel_options.
             channel = self.config.routing.channels.get(channel_name)
+            if channel is None and "-" in channel_name:
+                channel = self.config.routing.channels.get(
+                    channel_name.partition("-")[0])
             if channel and not channel.enabled:
                 continue
 

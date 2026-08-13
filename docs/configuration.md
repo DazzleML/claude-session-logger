@@ -6,11 +6,13 @@ claude-session-logger captures Claude Code session activity into purpose-specifi
 
 Three concepts:
 
-| Concept | What it is | Example |
-|---------|-----------|---------|
-| **Tool** | A specific Claude Code tool name | `Bash`, `Read`, `Skill` |
-| **Category** | A group of related tools | `bash`, `system`, `io`, `task`, `skill`, ... |
-| **Channel** | A log file destination | `shell`, `sesslog`, `tools`, `convo`, ... |
+| Concept | What it is | Whose vocabulary | Example |
+|---------|-----------|------------------|---------|
+| **Tool** | A specific Claude Code tool name, arriving verbatim in the hook payload | **Claude Code's** | `Bash`, `Read`, `Skill` |
+| **Category** | A group of related tools | **ours** — this plugin's classification layer | `bash`, `system`, `io`, `task`, `skill`, ... |
+| **Channel** | A log file destination | **ours** | `shell`, `sesslog`, `tools`, `convo`, ... |
+
+The mapping chain runs **their names → our categories → our channels**. The category layer exists precisely because the tool vocabulary is Claude Code's and churns with its releases: when a new tool ships, we classify it once and every route keeps working — and until we do, the `unknown` category catches it (surfaced by the `unknowns` channel), so nothing is ever silently dropped.
 
 Each tool belongs to one category. Each category routes to one or more channels. You customize routing to control where each kind of activity lands.
 
@@ -52,6 +54,53 @@ The loader checks two layouts. Use whichever you prefer.
 ```
 
 If both exist, the directory wins (debug-log warning notes the file is ignored).
+
+## Channel Options
+
+Every channel accepts an `options` object under `routing.channels.<name>.options` — the complete "how is this channel's stream shown" surface (per the mental-model axis above, presentation lives here, never on categories):
+
+| Option | Values | Default | Controls |
+|--------|--------|---------|----------|
+| `verbosity` | `"full"` / `"preview"` / `"name-only"` / `{"max_chars": N}` / `{"max_lines": N}` / per-role map | global preview length | how much of each entry this channel shows |
+| `formatter` | `"default"` / `"chat"` / `"task-only"` | `"default"` | the entry's overall shape (`{ROLE: ...}` hybrid-json, chat-log blocks, task-only lines) |
+| `newline_policy` | `"escape"` / `"render"` | `"escape"` | sub-option of the `default` formatter: literal `\n` (grep-friendly single line) vs real newlines |
+| `role_labels` | `{role: "LABEL"}` | built-ins | display labels (`{USER:`, `{Bash\|Explore:` ...) |
+| `suppress_markers` | `true`/`false` | `false` | opt this channel out of SESSION START / COMPACT markers |
+| `subtype_split` | `false` / `true` / `["name", ...]` | `false` (`true` on `agents`) | split the stream into `.channel-subtype_*` sibling files (section below) |
+| `collect` | `{attribute: true \| ["value", ...]}` | `{"agent_context": true}` on `agents` only | additionally collect entries by attribute — the emitter/collector model (section below) |
+
+### Per-role verbosity (the hierarchy)
+
+`verbosity` accepts a per-role map for direction- and tool-level control, with `_default` as the fallback and hint dicts (`max_chars`/`max_lines`) as values. The shipped `sesslog` default is the canonical example — full content for everything except file-sized payload roles:
+
+```json
+{
+  "verbosity": {
+    "_default": "full",
+    "write": {"max_chars": 20},
+    "edit": {"max_chars": 20},
+    "task-output": {"max_chars": 200}
+  }
+}
+```
+
+Role keys resolve by longest prefix (`agent:user` beats `agent`), and specific tool names work as level-1 keys (`{"PowerShell": {"max_chars": 50}}`).
+
+### `collect`: the emitter/collector model
+
+Every log entry is *emitted* carrying attributes (which agent produced it, its role, ...). A channel's `collect` declares which emitted entries it **additionally** receives, keyed by attribute name — additive, so collected entries keep every channel their category route gave them. This is how `.agents-<type>_*` files carry an agent's *full story*: the `agents` channel ships with `collect: {"agent_context": true}`, so a subagent's internal tool calls and its final report land next to its dispatch prompt instead of scattering.
+
+```json
+{
+  "routing": {
+    "channels": {
+      "agents": {"options": {"collect": {"agent_context": ["oracle", "help"]}}}
+    }
+  }
+}
+```
+
+Values: `true` = collect any entry with the attribute set; `["value", ...]` = only listed values (case-insensitive). When `subtype_split` is on, collected entries split by the *collected attribute's value* (`.agents-explore_*`), not by the tool's category. Any channel may declare `collect` — define your own collector channel entirely in config. Keys this version recognizes: `agent_context`; unknown keys are ignored with a one-time debug-log note, so configs written for newer plugin versions degrade gracefully.
 
 ## Common Customizations
 

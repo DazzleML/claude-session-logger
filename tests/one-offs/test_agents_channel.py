@@ -50,7 +50,11 @@ class TestAgentsChannelDefaults:
         from cclogger.models import _default_channels
         channels = _default_channels()
         opts = channels["agents"].options
-        assert opts.verbosity == "full"
+        # #53: full story with file-sized payload roles capped (sesslog shape)
+        assert opts.verbosity["_default"] == "full"
+        assert opts.verbosity["write"] == {"max_chars": 20}
+        assert opts.verbosity["task-output"] == {"max_chars": 200}
+        assert opts.collect == {"agent_context": True}  # emitter/collector on
         assert opts.formatter == "default"
         assert opts.suppress_markers is False  # gets session markers
 
@@ -197,8 +201,8 @@ class TestAgentsSubtypeChannelOptionsInheritance:
         config = Config()
         parent_options = config.routing.channels["agents"].options
 
-        # Sanity check: parent agents channel has verbosity="full"
-        assert parent_options.verbosity == "full"
+        # Sanity check: parent agents channel defaults full with capped roles
+        assert parent_options.verbosity["_default"] == "full"
         assert parent_options.formatter == "default"
 
     def test_user_can_declare_subtype_channel_to_override(self):
@@ -215,7 +219,7 @@ class TestAgentsSubtypeChannelOptionsInheritance:
         )
         assert config.routing.channels["agents-help"].options.verbosity == {"max_chars": 500}
         # Parent agents channel unchanged
-        assert config.routing.channels["agents"].options.verbosity == "full"
+        assert config.routing.channels["agents"].options.verbosity["_default"] == "full"
 
 
 # ============================================================================
