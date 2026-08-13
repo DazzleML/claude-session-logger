@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-13
+
+### Added
+
+- **`docs/vault-spec.md`** — the Vault Specification (spec-version 1.0.0): the canonical definition of project knowledge vaults (`private/claude/`). Ten citable sections: layout and the minimum-viable floor, the L0–L4 maturity ladder, naming conventions (the zero-ceremony producer interface), wikilink rules, the write-authority table (including the checkpoint rule and the no-background-autofix rule), the observed-gaps sensor-log schema, the three-ring ecosystem map around the oracle, survey guardrails for vault crawlers, the distribution/specialization model (one spec here; vaults carry versioned pointers, never copies; per-project bylaws; subtree pulls as the update channel), and the amendment discipline. Consumers — skills, agents, tools, and per-vault docs — cite clause codes (e.g. the wikilink rules section) instead of restating the rules. Written as transcription of field-adopted practice from the 2026-08 vault-bootstrapping arc; companion tooling (`vault-lint.py`) follows in a later release.
+
 ## [0.2.8] - 2026-07-29
 
 ### Fixed
