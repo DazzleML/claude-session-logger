@@ -4,6 +4,11 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.14] - 2026-08-13
+
+### Changed
+- **repokit-common subtree updated to upstream v0.2.9**: brings `vault-lint.py` (knowledge-vault linter + its tests and checklist) and the finalized `docs/vault-spec.md` (vault constitution). The local `sync-versions.py` extra-targets fork survived this pull untouched (upstream did not modify the file in this range); the fork-vs-upstream-rewrite reconciliation remains tracked for a future upstream release.
+
 ## [0.3.13] - 2026-08-13
 
 ### Changed

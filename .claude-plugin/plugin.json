@@ -1,6 +1,6 @@
 {
   "name": "session-logger",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Real-time session logging, command history, and auto-naming for Claude Code",
   "author": {
     "name": "djdarcy",
