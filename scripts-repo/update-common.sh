@@ -9,8 +9,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PREFIX="scripts"
+# Repository root via git (works for any subtree prefix depth)
+REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel)"
+# Subtree prefix derived from this script's location relative to the repo root
+PREFIX="${SCRIPT_DIR#"$REPO_ROOT"/}"
 REMOTE_NAME="repokit-common"
 REMOTE_URL="https://github.com/DazzleTools/git-repokit-common.git"
 

@@ -84,13 +84,24 @@ else
 fi
 
 # Configuration
-# Auto-detect the package directory
+# Auto-detect the package directory (flat layout first)
 for dir in */; do
     if [ -f "${dir}__init__.py" ] && [ -f "${dir}_version.py" ]; then
         SOURCE_FILE="${dir}_version.py"
         break
     fi
 done
+
+# Also check src/ layout (PEP 517 / setuptools src layout)
+if [ -z "$SOURCE_FILE" ] && [ -d "src" ]; then
+    for dir in src/*/; do
+        if [ -f "${dir}__init__.py" ] && [ -f "${dir}_version.py" ]; then
+            SOURCE_FILE="${dir}_version.py"
+            break
+        fi
+    done
+fi
+
 if [ -z "$SOURCE_FILE" ]; then
     echo -e "${RED}Error: Could not find _version.py in any package directory${NC}"
     exit 1

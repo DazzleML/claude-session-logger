@@ -8,6 +8,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-07-29
+
+### Fixed
+
+- **`hooks/pre-commit` no longer word-splits staged paths.** Both checks iterated `for file in $(git diff --cached --name-only)`, which splits on whitespace, so `my report.log` arrived as `my` and `report.log`. Two consequences: the private-content regex matched fragments rather than whole paths, and the large-file guard's `[ -f "$file" ]` test failed on every fragment -- meaning **any file whose name contained a space was never size-checked at all**. Both checks now read a NUL-delimited list, the only safe form for paths.
+
+  Note for anyone applying this pattern elsewhere: the list must be carried in a *file*, not a shell variable. Command substitution strips NUL bytes, so `X=$(git ... -z)` silently concatenates every path into a single string, and the checks then inspect one nonexistent filename instead of the staged set.
+
+- **Version-script resolution reaches subtrees mounted outside `scripts/`.** v0.2.7 generalized the lookup across `scripts/repokit-common/`, `scripts/`, and a recursive `find` beneath `scripts/` -- which covers consumers that nest the subtree under `scripts/` at any depth, but still silently no-ops the version stamp for one mounted elsewhere (e.g. `Software/<area>/<tools>/Repokit-Scripts/`). A final fallback now asks git's index (`git ls-files -- '*sync-versions.py'`), which is layout-agnostic by construction and costs no directory walk -- relevant on large work trees, where a recursive `find` can take minutes. Applied to `update-version.sh` resolution as well. Purely additive: it runs only when all existing candidates miss, so consumers on the established layouts resolve exactly as before.
+
+### Changed
+
+- **`hooks/pre-push` protected-branch policy moved to per-repo config.** The block previously carried a hardcoded branch pattern, which is repo policy rather than shared-library behaviour. It now reads `repokit.protectedBranchRe` from the consuming repo's own config and is skipped entirely when unset, so repos that do not use it are unaffected. Keeping the value in `.git/config` also means it is never committed, which matters when the branch name itself is sensitive. Matching still covers both source and destination refs. **Migration:** a repo relying on the previous hardcoded pattern must set the config value, or its protection lapses.
+
+- **`hooks/pre-commit` performs each check in a single pass.** The per-file loops spawned one or two processes per staged path -- roughly 1,300 for a 650-file commit, which is slow everywhere and markedly worse under Git Bash on Windows, where it contributed to multi-minute commit times. The private-content check is now one `grep` over the whole list, consulting the allowlist only for paths that actually match; the large-file check batches through `xargs -0 du`. Patterns, thresholds, allowlist semantics, messages and exit codes are unchanged.
+
+## [0.2.7] - 2026-06-11
+
+Formal release of the nested-subtree-placement fixes: consumers can now mount
+the subtree at `scripts/repokit-common/` (keeping their own project scripts in
+`scripts/` without collisions) and have every path-dependent tool work. Folds in
+the earlier hook fix (155be9b, shipped unversioned) and completes the path
+helpers it left untouched.
+
+### Fixed
+
+- **Hooks resolve the version script layout-agnostically** (155be9b): `hooks/pre-commit` and `hooks/post-commit` try `scripts/repokit-common/sync-versions.py`, then `scripts/sync-versions.py`, then a recursive `find` under `scripts/` (same for the `update-version.sh` fallback). The hardcoded flat path silently no-op'd the version stamp for every nested-layout consumer. `install-hooks.sh` help text prints the resolved path. Also adds `.repokit-allowlist` support to the private-content check.
+- **`paths.sh`**: `REPO_ROOT` now walks up to the nearest `.git` (dir or worktree file) instead of assuming the scripts-repo's parent directory -- which was wrong for any nesting depth other than flat `scripts/`.
+- **`update-common.sh`**: `REPO_ROOT` via `git rev-parse --show-toplevel`; subtree `PREFIX` derived from the script's own location relative to the repo root, so `update-common.sh --check/--push` and `git subtree pull` work at any prefix depth (e.g. `scripts/repokit-common`).
+
+First consumer: `DazzleTools/dazzlelink` (file-association scripts live in `scripts/`; subtree moves to `scripts/repokit-common/`).
+
+## [0.2.6] - 2026-05-18
+
+### Added
+
+- **`generate-backlinks.py`**: Obsidian-style reverse-link index generator for `private/claude/` knowledge vaults. Walks all `.md` files, parses `[[wikilinks]]` and `[[wikilinks|aliases]]`, builds a reverse-link (backlinks) index, writes to `_oracle/backlinks.md`. Zero deps beyond Python stdlib; optional `networkx` for `--graph FILE` export. Flags: `--stats` (summary), `--orphans` (notes with no links in either direction), `--broken` (dangling wikilinks), `--validate` (regenerate + report), `--dry-run`, `--json`. Auto-detects vault from cwd via the `private/claude/` or `_maps/` markers, or accepts an explicit path arg. Powers the "Phase 1a" RAG-lite metadata that the Claude Code `oracle` agent expects (`_oracle/manifest.md`, `_oracle/concepts.md`, `_oracle/backlinks.md`); without it, oracle's "what references X?" queries fall back to recursive grep.
+
+  **Provenance note:** originally written in `github-traffic-tracker`; ships here so every repokit-common consumer (amdead, wtf-windows, Prime-Square-Sum, dazzlecmd, etc.) picks it up via subtree pull. Long-term home is a `dazzlecmd` tool (see `DazzleTools/dazzlecmd#70` — graduate fully-generic utility scripts to dazzlecmd tools); this distribution channel is a stepping stone, not the destination.
+
+## [0.2.5] - 2026-05-15
+
+### Fixed
+
+- **`update-version.sh` package auto-detection on src/ layout**: the auto-detect added in v0.2.2 walked only top-level directories looking for `__init__.py` + `_version.py` together. On PEP 517 / setuptools src-layout projects (where the package lives at `src/<package>/`, not at the repo root), no top-level dir contains those files, so the script exited with `Error: Could not find _version.py in any package directory`. Added the same `src/*/` fallback that `pre-push` already has — first the flat loop, then `src/*/` if `src/` exists and the flat loop didn't find a candidate. Discovered while integrating repokit-common into a src-layout project (`DazzleTools/dazzlecmd` -- src/dazzlecmd/_version.py); pre-commit hooks weren't affected (they use `sync-versions.py --auto` which reads `version-source` from `[tool.repokit-common]`), but anyone running `bash scripts/update-version.sh` manually on a src-layout project hit the bug. Note: `update-version.sh` is upstream-deprecated in favor of `sync-versions.py`, but the fix keeps the legacy fallback functional for consumers that haven't migrated yet.
+
 ## [0.2.4] - 2026-04-19
 
 ### Fixed
@@ -128,7 +174,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 All project-specific hardcoding (`wtf-restarted`, `comfydbg`) was replaced with auto-detection or `$placeholder` variables. Project-level files (`.github/`, `CONTRIBUTING.md`, `.repokit.json`, `.vscode/`) were substituted with real values for `git-repokit-common`.
 
-[Unreleased]: https://github.com/DazzleTools/git-repokit-common/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/DazzleTools/git-repokit-common/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/DazzleTools/git-repokit-common/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/DazzleTools/git-repokit-common/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/DazzleTools/git-repokit-common/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/DazzleTools/git-repokit-common/compare/v0.1.4-alpha...v0.2.2
