@@ -1,0 +1,8 @@
+{
+  "_about": "Re-verification of the two U1 survivors after closing the loop (2026-09-03). M5 is not re-run: its target (_detect_agent_context) was DELETED as dead code -- no production caller existed, so the mutant was unobservable by construction; deletion removes the hiding place. M12 is re-run against the extended fixture (in-agent tool calls, untyped + typed) and the id-carrying legacy label.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_untyped_agent_bucketing.py"],
+  "mutations": [
+    {"id": "M12", "file": "hooks/scripts/cclogger/formatters/legacy.py", "original": "        timestamp=event_time,\n        tool_name=tool_info.name,\n        agent_context=tool_info.agent_context,\n        agent_id=tool_info.agent_id,\n    )", "mutated": "        timestamp=event_time,\n        tool_name=tool_info.name,\n        agent_context=tool_info.agent_id,\n        agent_id=tool_info.agent_context,\n    )", "note": "classifier/id swapped in the legacy LogEntry construction (survived round 1; killing test = test_tool_call_leg_carries_classifier_and_id_the_right_way_round)."},
+    {"id": "M13", "file": "hooks/scripts/cclogger/formatters/legacy.py", "original": "        if ctx == UNTYPED_AGENT_CLASSIFIER and tool_info.agent_id:\n            return f\"{tool_info.name}|{ctx}/{tool_info.agent_id}\"", "mutated": "        if ctx == UNTYPED_AGENT_CLASSIFIER and tool_info.agent_id:\n            return f\"{tool_info.name}|{ctx}\"", "note": "Round-2 mutant on the new code: untyped composed label drops the id."}
+  ]
+}

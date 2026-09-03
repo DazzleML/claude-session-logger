@@ -178,6 +178,28 @@ def apply_override_channel_options(
                 # False / other shapes -> no predicate for this key
             target.collect = cleaned or None
 
+    if "exclude" in override:
+        v = override["exclude"]
+        if v is None:
+            target.exclude = None
+        elif isinstance(v, dict):
+            # Subtractive mirror of collect (2026-09-02): same value grammar
+            # (True = any, list = named), same forward-compat rule (unknown
+            # keys warn once and are ignored).
+            from cclogger.debug import _warn_unknown_exclude_key_once
+            from cclogger.models import EXCLUDE_RECOGNIZED_KEYS
+            cleaned_ex: dict[str, Any] = {}
+            for key, val in v.items():
+                if key not in EXCLUDE_RECOGNIZED_KEYS:
+                    _warn_unknown_exclude_key_once(str(key))
+                    continue
+                if val is True:
+                    cleaned_ex[key] = True
+                elif isinstance(val, list):
+                    cleaned_ex[key] = [item for item in val if isinstance(item, str)]
+                # False / other shapes -> no predicate for this key
+            target.exclude = cleaned_ex or None
+
 
 def apply_override_channel_config(
     target: ChannelConfig, override: Any, channel_name: str = ""

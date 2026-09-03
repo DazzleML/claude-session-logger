@@ -1,0 +1,141 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\mut-root-u4",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_untyped_migration.py"
+    ],
+    "timestamp": "2026-09-03T03:12:49-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "legacy filter and -> or (other sessions'/other channels' files swept in).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "no-legacy guard inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "sorted() dropped (equal-stamp order becomes listing order).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "sort key swapped: sequence before timestamp.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "entry boundary or -> and (all stamped lines collapse into the first entry).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "continue dropped after a read failure (unreadable file moved without being merged).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "banner after the entries.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "collision loop -> single if.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "sentinel body kind wrong.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "stamp regex loses the ^ anchor.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "legacy filename regex off by one hex digit.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "_prepend_locked appends instead of prepending.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S1",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "SUPPLEMENT: sentinel never dropped after a migration (would re-run every run).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S2",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "SUPPLEMENT: originals never moved (duplicates left in the root).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 7,
+    "survived": 7
+  },
+  "anomalies": []
+}

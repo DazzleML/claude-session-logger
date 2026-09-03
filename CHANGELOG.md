@@ -4,6 +4,26 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] - 2026-09-03
+
+Interim snapshot of the 2026-09-02 incident fix: Claude Code's internal background forks (activity summaries, prompt suggestions, memory extraction) stop with an `agent_id` and an **empty** `agent_type`; the v0.3.11 identity fallback keyed the agents channel's split on the id, minting one one-line `.agents-a<16hex>_*` file per fork (1,091 in one session, 25 of 528 session directories on the dev box), and per-event file reconciliation then re-listed the directory once per file with a stat per entry -- quadratic, 5-60 s per hook event, "UserPromptSubmit hook timed out after 30s". Verification of two units and the docs pass are still open; see the whereweare and postmortem dated 2026-09-03 in the project-private notes.
+
+### Fixed
+- **Untyped subagents are bucketed, never per-instance**: a subagent whose `agent_type` is empty resolves to the fixed classifier `untyped`, so all of Claude Code's internal side-query stops land in one `.agents-untyped_*` feed. The instance id is kept on every line (`AGENT:untyped/<id>`, `Bash|untyped/<id>`), so attribution is never lost; typed agents render exactly as before. Refs #53.
+- **Reconciliation cost is flat in the file count**: one directory listing per pass (`os.scandir`, no per-entry stat) shared by every lookup, and a per-directory stamp (`.session-logger-reconciled`) that skips the pass entirely on the steady state; the full pass still runs whenever the session name changes and on the first event of every run. Measured on the unit's own tests: 4 min 45 s before, 5 s after.
+- A dead identity wrapper left from the v0.3.11 discriminator was removed.
+
+### Added
+- **`exclude`** channel option: the subtractive mirror of `collect` (`{"agent_context": ["untyped"]}` hides those entries from that one channel; `true` hides every subagent entry there). Evaluated after routing, collection and splitting, so it beats `collect`; derived `.<base>-<subtype>_*` files inherit the base channel's setting unless declared themselves; unknown keys warn once and are ignored. Default: none -- every channel still receives everything its routes give it.
+- **One-time migration** of legacy per-instance files: on the first event of a run, `.agents-a<16hex>_*` files are merged in timestamp order into the untyped feed (prepended under the append lock if the feed is already live), the originals are moved -- never deleted -- to `baks/untyped-<date>/` with a `MANIFEST.txt`, and a `.session-logger-untyped-migrated` sentinel keeps it from running twice.
+- **Hook self-observability**: `~/.claude/logs/session-logger-perf.log` receives a `SLOW` line with a phase breakdown for any invocation over 1.0 s (`SESSION_LOGGER_SLOW_HOOK_SECONDS` overrides the threshold); an in-flight marker per invocation lets the next invocation report a previous one that never finished (`DID-NOT-FINISH` -- the only trace a hook-timeout kill leaves); a once-per-session `DERIVED-GROWTH` warning fires when a directory grows more than 64 derived channel basenames (observability only, routing is never changed).
+- Tests: `test_untyped_agent_bucketing.py`, `test_reconciliation_gating.py`, `test_exclude_predicate.py`, `test_untyped_migration.py`, `test_hook_observability.py` (suite 458 -> 526); mutation specs and reports under `tests/mutation/`; reproduction and proof-of-concept probes under `tests/one-offs/thinking/`.
+- The session-directory README now documents the reconciled stamp and the migration sentinel.
+
+### Known, not yet fixed (tracked in the project-private whereweare)
+- `SubagentStop` still reads the main transcript from the cursor it shares with `Stop`, so main-thread narration written while an agent ran can be labeled as that agent's message and the agent's own final message dropped; the per-agent files also lack the agent's own narration and thinking (its sidechain transcript is never read). Both are the next unit of work.
+- `docs/configuration.md`, `docs/channels.md`, `docs/installation.md`, the README and the example presets do not yet describe `exclude`, the untyped feed, the stamp, the sentinel or the perf log; the JSON schema does.
+
 ## [0.3.15] - 2026-08-13
 
 ### Added

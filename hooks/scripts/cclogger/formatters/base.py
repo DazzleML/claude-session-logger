@@ -65,6 +65,13 @@ class BaseFormatter:
 
         Returns the normalize_subtype() form so displayed identity always
         matches per-agent file naming.
+
+        Untyped bucket (2026-09-02): entries whose classifier is the fixed
+        "untyped" bucket render as ``untyped/<agent_id>`` -- the bucket names
+        a CLASS, and the per-instance id is the only attribution the line can
+        carry (no transcript exists for these agents). Under ``auto`` inside
+        ``.agents-untyped_*`` the class part is dropped like any other
+        filename repeat, but the id is kept: ``<agent_id>``.
         """
         ctx = getattr(entry, "agent_context", None)
         if not ctx:
@@ -75,10 +82,15 @@ class BaseFormatter:
         if mode == "never":
             return None
         from cclogger.categorize import normalize_subtype
+        from cclogger.models import UNTYPED_AGENT_CLASSIFIER
         norm = normalize_subtype(ctx)
         if not norm:
             return None
-        if mode == "auto" and self.channel_name.endswith(f"-{norm}"):
+        repeats_filename = mode == "auto" and self.channel_name.endswith(f"-{norm}")
+        agent_id = getattr(entry, "agent_id", None)
+        if norm == UNTYPED_AGENT_CLASSIFIER and agent_id:
+            return str(agent_id) if repeats_filename else f"{norm}/{agent_id}"
+        if repeats_filename:
             return None
         return norm
 

@@ -32,7 +32,23 @@ from cclogger import paths
 from cclogger.categorize import categorize_tool
 from cclogger.config import ConfigLoader
 from cclogger.conversation import handle_conversation_event
-from cclogger.debug import DEBUG_LOG, _warn_unknown_tool_once, debug_log
+from cclogger.debug import (
+    DEBUG_LOG,
+    PerfTimer,
+    _warn_unknown_tool_once,
+    begin_inflight,
+    debug_log,
+    end_inflight,
+    report_stale_inflight,
+)
+
+# Self-observability (2026-09-02 incident): the timer starts here, before the
+# heavier cclogger imports, so a SLOW line accounts for import time too; the
+# in-flight marker and the invocation context are filled in by main() once
+# the payload is parsed and closed by _finish() on every exit path.
+_TIMER = PerfTimer()
+_INFLIGHT = None
+_CTX: dict = {}
 from cclogger.failure_detection import detect_and_log_failure
 from cclogger.formatters import (
     generate_entry,
@@ -88,6 +104,16 @@ def main() -> None:
     # Detect hook event type
     hook_event_name = json_input.get("hook_event_name", "PostToolUse")
     debug_log(f"Hook event: {hook_event_name}")
+
+    # Self-observability (2026-09-02 incident): bracket this invocation with
+    # an in-flight marker (a stale one found later proves a kill), report any
+    # previous invocation that never finished, and start the phase clock.
+    global _INFLIGHT
+    _CTX.update(session_id=json_input.get("session_id", "unknown"),
+                event=hook_event_name, tool=json_input.get("tool_name", ""))
+    _INFLIGHT = begin_inflight(_CTX["session_id"], hook_event_name, _CTX["tool"])
+    report_stale_inflight()
+    _TIMER.mark("parsed")
 
     # Log source field for SessionStart events to investigate compaction detection (#14)
     if hook_event_name == "SessionStart":
@@ -175,6 +201,7 @@ def main() -> None:
 
     # Create transcript symlink in sesslog directory (non-blocking on failure)
     ensure_transcript_symlink(session_dir, tool_info.transcript_path)
+    _TIMER.mark("session-dir")
 
     # Conversation events (sub-issues #33-#35): UserPromptSubmit, Stop,
     # SubagentStop -- capture user/AI/agent prose to the convo channel
@@ -190,6 +217,7 @@ def main() -> None:
             )
         except Exception as e:
             debug_log(f"Conversation event handler error ({hook_event_name}): {e}")
+        _TIMER.mark("convo")
 
     # For non-tool hooks, we're done after updating state
     if not is_tool_hook:
@@ -236,7 +264,9 @@ def main() -> None:
     # Create logger and write entry (pass event_time for channel consistency)
     # SessionLogger handles file reconciliation and session markers on init
     logger = SessionLogger(config, session_context, event_time)
+    _TIMER.mark("logger-init")
     logger.log_entry(entry, tool_info.name, tool_category, event_time=event_time, raw_json=tool_info.raw_json)
+    _TIMER.mark("log-entry")
 
     # Check for failures (Bash only, uses same event_time)
     detect_and_log_failure(tool_info, config, logger, event_time)
@@ -245,6 +275,20 @@ def main() -> None:
 
     # Return success
     print('{"continue": true}')
+
+
+def _finish() -> None:
+    """Close this invocation's own bookkeeping on every exit path: remove the
+    in-flight marker and record the run if it was slow (2026-09-02 incident:
+    a 5-60s hook cost per event was invisible until a user saw "hook timed
+    out"). Never raises."""
+    try:
+        end_inflight(_INFLIGHT)
+        _TIMER.mark("finish")
+        _TIMER.report(_CTX.get("session_id", "unknown"), _CTX.get("event", "?"),
+                      _CTX.get("tool", ""))
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
@@ -259,3 +303,5 @@ if __name__ == "__main__":
         except Exception:
             pass
         print('{"continue": true}')
+    finally:
+        _finish()

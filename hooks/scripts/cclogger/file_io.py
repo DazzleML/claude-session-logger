@@ -372,6 +372,22 @@ _SENTINEL_BODIES = {
         "#\n"
         "# See README.session-logger.md (same directory) for an overview.\n"
     ),
+    "untyped": (
+        "# claude-session-logger untyped-agent migration marker\n"
+        "#\n"
+        "# This file's presence tells the hook that any legacy per-instance\n"
+        "# `.agents-a<16hex>_*` files in this directory (one per internal\n"
+        "# Claude Code side-query stop, minted by v0.3.11..v0.3.15 when the\n"
+        "# hook payload carried an empty agent_type) have been merged, in\n"
+        "# timestamp order, into the single `.agents-untyped_*` feed, and\n"
+        "# the originals moved to `baks/untyped-<date>/` with a MANIFEST.\n"
+        "#\n"
+        "# Safe to delete: yes. Deletion causes the sweep to re-run on the\n"
+        "# next session start; with no legacy files present it is a no-op\n"
+        "# and this marker regenerates automatically.\n"
+        "#\n"
+        "# See README.session-logger.md (same directory) for an overview.\n"
+    ),
 }
 
 
@@ -408,6 +424,8 @@ may notice here.
 | `baks/` | Recoverable backup of files moved by housekeeping (see below) |
 | `.session-logger-overflow-migrated` | Marker: legacy `.overflow.N` files (if any) have been absorbed into their main log files |
 | `.session-logger-orphans-swept` | Marker: log files bearing OLD session names (from a pre-v0.3.7-pre rename bug) have been moved to `baks/` |
+| `.session-logger-untyped-migrated` | Marker: legacy per-instance `.agents-a<16hex>_*` files (one per Claude Code internal side-query stop, v0.3.11..v0.3.15) have been merged into the `.agents-untyped_*` feed; originals in `baks/untyped-<date>/` with a MANIFEST |
+| `.session-logger-reconciled` | Marker: the session name the log files currently embed; lets the hook skip rename housekeeping on the steady state (safe to delete -- regenerates on the next event) |
 
 ## Are the `.session-logger-*` markers safe to delete?
 
@@ -550,3 +568,151 @@ def sweep_orphan_session_name_files(
             f"Orphan-name sweep complete in {session_dir.name}: {moved} file(s) moved to baks/"
         )
     return moved
+
+
+# ---------------------------------------------------------------------------
+# Untyped-agent migration (2026-09-02 incident, v0.3.16)
+# ---------------------------------------------------------------------------
+
+UNTYPED_MIGRATION_SENTINEL = ".session-logger-untyped-migrated"
+_LEGACY_UNTYPED_ID_FILE = re.compile(r"^\.agents-a[0-9a-f]{16}_.+")
+_ENTRY_STAMP = re.compile(r"^\[\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\]")
+
+
+def migrate_untyped_agent_files(session_dir: Path, session_id: str,
+                                session_name: Optional[str], shell: str,
+                                username: str) -> int:
+    """Fold legacy per-instance untyped files into the single untyped feed.
+
+    v0.3.11..v0.3.15 keyed the agents channel's subtype on `agent_id`
+    whenever Claude Code delivered an empty `agent_type`, minting one
+    one-line `.agents-a<16hex>_*` file per internal side-query stop (1,091
+    in one session; 25 of 528 directories on the dev box). v0.3.16 buckets
+    those entries into `.agents-untyped_*`. This sweep brings existing
+    directories to the same shape:
+
+      * every legacy file's entries (an entry = a `[[timestamp]]` line plus
+        any continuation lines) are merged in timestamp order into the feed
+        file the current naming would use -- created if absent, PREPENDED
+        under the append lock when a live session already writes to it
+        (legacy entries are older by construction);
+      * lines are kept byte-for-byte -- an audit record is never rewritten,
+        so the old `AGENT:<id>` labels stay as they were logged;
+      * the originals are MOVED, never deleted, to `baks/untyped-<date>/`
+        with a MANIFEST.txt (numeric suffix on collision);
+      * a sentinel makes it run once per directory; a directory with
+        nothing to migrate still gets the sentinel.
+
+    Best-effort: a file that cannot be read or moved is left in place and
+    logged; the sentinel is still dropped so the hook never loops (rerun
+    by deleting it). Returns the number of files moved.
+    """
+    if not session_dir.exists():
+        return 0
+    sentinel = session_dir / UNTYPED_MIGRATION_SENTINEL
+    if sentinel.exists():
+        return 0
+
+    from cclogger.reconciliation import build_filename, list_session_dir
+    legacy = [p for p in list_session_dir(session_dir)
+              if _LEGACY_UNTYPED_ID_FILE.match(p.name) and session_id in p.name]
+    if not legacy:
+        _drop_sentinel(sentinel, absorbed=0, kind="untyped")
+        _ensure_session_logger_readme(session_dir)
+        return 0
+
+    # Parse entries with their stamps. Stable sort keeps a file's own order
+    # for equal stamps; a leading unstamped line starts the first entry.
+    entries: list[tuple[str, int, str]] = []
+    readable: list[Path] = []
+    seq = 0
+    for f in sorted(legacy, key=lambda p: p.name):
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            debug_log(f"Untyped migration: cannot read {f.name}: {e} -- left in place")
+            continue
+        readable.append(f)
+        current: Optional[list[str]] = None
+        stamp = ""
+        for line in text.splitlines():
+            m = _ENTRY_STAMP.match(line)
+            if m or current is None:
+                if current is not None:
+                    entries.append((stamp, seq, "\n".join(current)))
+                    seq += 1
+                stamp = m.group(1) if m else ""
+                current = [line]
+            else:
+                current.append(line)
+        if current is not None:
+            entries.append((stamp, seq, "\n".join(current)))
+            seq += 1
+    entries.sort(key=lambda e: (e[0], e[1]))
+
+    feed = session_dir / build_filename("", "agents-untyped", shell, session_name,
+                                        session_id, username, seq=None)
+    now = datetime.now()
+    ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    banner = (
+        f"═══ MIGRATED {len(entries)} legacy untyped entries from {len(readable)} "
+        f"per-instance file(s) at {ts_str}; originals in baks/untyped-{now:%Y-%m-%d}/ ═══\n"
+    )
+    block = (banner + "\n".join(e[2] for e in entries) + "\n").encode("utf-8")
+    try:
+        _prepend_locked(feed, block)
+    except Exception as e:
+        debug_log(f"Untyped migration: could not write {feed.name}: {e} -- originals left in place")
+        return 0
+
+    baks_dir = session_dir / "baks" / f"untyped-{now:%Y-%m-%d}"
+    try:
+        baks_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        debug_log(f"Untyped migration: cannot create {baks_dir}: {e} -- originals left in place")
+        return 0
+    moved = 0
+    manifest: list[str] = []
+    for f in readable:
+        dest = baks_dir / f.name
+        i = 1
+        while dest.exists():
+            dest = baks_dir / f"{f.name}.{i}"
+            i += 1
+        try:
+            f.rename(dest)
+            moved += 1
+            manifest.append(f.name)
+        except OSError as e:
+            debug_log(f"Untyped migration: could not move {f.name}: {e}")
+    try:
+        with (baks_dir / "MANIFEST.txt").open("a", encoding="utf-8") as fh:
+            fh.write(f"# migrated {ts_str}: {moved} file(s) merged into {feed.name}\n")
+            fh.write("\n".join(manifest) + "\n")
+    except OSError as e:
+        debug_log(f"Untyped migration: could not write MANIFEST.txt: {e}")
+
+    _drop_sentinel(sentinel, absorbed=moved, kind="untyped")
+    _ensure_session_logger_readme(session_dir)
+    debug_log(f"Untyped migration complete in {session_dir.name}: {moved} file(s) -> {feed.name}")
+    return moved
+
+
+def _prepend_locked(path: Path, block: bytes) -> None:
+    """Put `block` in front of `path`'s current contents (creating the file
+    when absent) under the same byte-0 exclusive lock atomic_append takes,
+    so a concurrent appender from another hook process cannot interleave."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with open(path, "wb"):
+            pass
+    with open(path, "r+b") as fp:
+        lock_exclusive(fp)
+        try:
+            existing = fp.read()
+            fp.seek(0)
+            fp.truncate()
+            fp.write(block + existing)
+            fp.flush()
+        finally:
+            unlock(fp)

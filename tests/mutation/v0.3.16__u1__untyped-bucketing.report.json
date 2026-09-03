@@ -1,0 +1,151 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\mut-root",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_untyped_agent_bucketing.py",
+      "tests/one-offs/test_agent_context_routing.py::TestDiscriminator",
+      "tests/one-offs/test_agent_context_routing.py::TestAgentLabelModes"
+    ],
+    "timestamp": "2026-09-03T01:19:10-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "Inverts the early-return guard: bails to (None, None) whenever agent_id IS present.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "Drops .strip(): whitespace-only agent_type escapes the untyped bucket.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "or -> and in the fallback: typed becomes 'untyped', empty becomes ''.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "ToolInfo.from_json drops agent_id (falls to None).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "_detect_agent_context returns the id instead of the classifier.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "Drops str() on agent_id.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "Inverts the None-check: configured agent_label ignored.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "never/always swapped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "and -> or: filename repeat treated as suppression under every mode.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "and -> or: typed agents with an id take the untyped branch (id suffix leaks onto typed labels).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "is_subagent guard inverted: identity resolved on Stop, not SubagentStop.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "classifier/id swapped in the legacy LogEntry construction.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "SUPPLEMENT: the original bug -- classifier falls back to the per-instance id when agent_type is empty.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S2",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "SUPPLEMENT: auto inside .agents-untyped_* drops the id (attribution lost).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S3",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "SUPPLEMENT: bucket constant renamed -- file naming and labels drift from the documented 'untyped'.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 13,
+    "survived": 2
+  },
+  "anomalies": []
+}

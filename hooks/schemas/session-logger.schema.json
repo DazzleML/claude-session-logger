@@ -144,6 +144,16 @@
                         {"type": "array", "items": {"type": "string"}}
                       ]
                     }
+                  },
+                  "exclude": {
+                    "description": "Subtractive mirror of `collect` (v0.3.16): entries this channel must NOT receive, keyed by entry attribute name, same value grammar (true = any entry carrying the attribute; list[str] = only those attribute values). Evaluated after routing, collection and subtype expansion; exclude beats collect; derived `<base>-<subtype>` channels inherit the base channel's exclude unless declared themselves. Unknown keys warn once and are ignored. Default: none -- every channel receives everything its routes give it. Typical use: `{\"agent_context\": [\"untyped\"]}` on `convo` (or `agents`) to hide Claude Code's untyped side-query entries from that channel; `.sesslog_*` always keeps the full record.",
+                    "type": ["object", "null"],
+                    "additionalProperties": {
+                      "oneOf": [
+                        {"type": "boolean"},
+                        {"type": "array", "items": {"type": "string"}}
+                      ]
+                    }
                   }
                 }
               }

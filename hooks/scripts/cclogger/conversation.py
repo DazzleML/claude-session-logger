@@ -188,14 +188,16 @@ def handle_conversation_event(
 
     if hook_event_name in ("Stop", "SubagentStop"):
         is_subagent = hook_event_name == "SubagentStop"
-        # #53: agent identity for the report leg. agent_id-gated -- the
-        # documented discriminator ('--agent' main threads carry agent_type
-        # WITHOUT agent_id and must not be labeled as subagent context).
-        agent_ctx = None
-        if is_subagent and json_input.get("agent_id"):
-            agent_ctx = str(
-                json_input.get("agent_type") or json_input.get("agent_id")
-            )
+        # #53: agent identity for the report leg, via the ONE shared resolver
+        # (models.resolve_agent_identity): agent_id-gated, and an empty
+        # agent_type -- Claude Code's transcript-less side-queries -- becomes
+        # the bounded "untyped" classifier with the id kept on the entry
+        # (2026-09-02 incident: the old `agent_type or agent_id` fallback
+        # minted one channel file per stop).
+        from cclogger.models import resolve_agent_identity
+        agent_ctx, agent_id = (None, None)
+        if is_subagent:
+            agent_ctx, agent_id = resolve_agent_identity(json_input)
         transcript_path = json_input.get("transcript_path", "")
         texts = _read_recent_assistant_messages(
             transcript_path, session_id, is_subagent=is_subagent
@@ -219,6 +221,7 @@ def handle_conversation_event(
                 tool_name=hook_event_name,
                 timestamp=event_time,
                 agent_context=agent_ctx,
+                agent_id=agent_id,
             )
             logger.log_entry(
                 entry,

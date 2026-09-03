@@ -12,12 +12,103 @@ relocates them to match the current expected name.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Optional
 
-from cclogger.debug import debug_log
+from cclogger.debug import (
+    DERIVED_CHANNEL_WARN_THRESHOLD,
+    _warn_derived_growth_once,
+    debug_log,
+)
 from cclogger.session_naming import cap_session_name, collapse_delimiter, sanitize_dirname
+
+# ---------------------------------------------------------------------------
+# One-listing scan + the reconciled stamp (2026-09-02 incident)
+# ---------------------------------------------------------------------------
+#
+# The incident: reconcile_session_files ran on EVERY hook event and, for each
+# basename discovered on disk, re-listed the directory with a stat per entry
+# (Path.iterdir() + is_file()). Once every untyped subagent was its own
+# basename (1,091 one-line files in one session), that was O(basenames x
+# files): 0.18s at 0 files, 16.6s at 600, ~56s at 1,100 -- the 60s hook kills.
+# Two independent fixes live here: the listing is taken ONCE per pass with
+# os.scandir (no per-entry stat), and a per-directory stamp lets the steady
+# state skip the pass entirely (see SessionLogger._reconcile_files).
+
+RECONCILED_STAMP = ".session-logger-reconciled"
+
+
+def list_session_dir(sesslog_dir: Path) -> list[Path]:
+    """One directory listing, no per-entry stat.
+
+    `os.scandir` entries carry their file/dir kind from the listing itself
+    (on Windows, the FindNextFile attributes), so filtering to regular files
+    costs no extra system calls. Callers take this listing once and pass it
+    down to every per-basename lookup.
+    """
+    out: list[Path] = []
+    try:
+        with os.scandir(sesslog_dir) as it:
+            for entry in it:
+                try:
+                    if entry.is_file():
+                        out.append(Path(entry.path))
+                except OSError:
+                    continue
+    except OSError as e:
+        debug_log(f"Error scanning {sesslog_dir}: {e}")
+    return out
+
+
+def read_reconciled_stamp(sesslog_dir: Path) -> Optional[str]:
+    """The effective session name this directory's files were last reconciled
+    to, or None when the stamp is absent or unreadable."""
+    try:
+        text = (sesslog_dir / RECONCILED_STAMP).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return text.strip() or None
+
+
+def write_reconciled_stamp(sesslog_dir: Path, effective_name: str) -> None:
+    """Record that every log file in `sesslog_dir` embeds `effective_name`.
+
+    Write-then-replace, so a concurrent reader (main thread and subagent
+    hooks share a session) never sees a half-written stamp. Best-effort.
+    """
+    stamp = sesslog_dir / RECONCILED_STAMP
+    tmp = sesslog_dir / f"{RECONCILED_STAMP}.tmp{os.getpid()}"
+    try:
+        tmp.write_text(effective_name + "\n", encoding="utf-8")
+        os.replace(tmp, stamp)
+    except OSError as e:
+        debug_log(f"Could not write reconciled stamp: {e}")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def build_channel_targets(sesslog_dir: Path, session_id: str, session_name: str,
+                          shell: str, username: str,
+                          channel_names: list[str]) -> dict[str, Path]:
+    """The write targets reconcile_session_files() returns for an already
+    reconciled directory -- computed without listing it.
+
+    Same keys (`{prefix}{file_type}` for both prefixes) and the same paths
+    (each declared channel's no-sequence target): every branch of
+    reconcile_single_category returns exactly that path, so on the steady
+    state the two are interchangeable.
+    """
+    targets: dict[str, Path] = {}
+    for prefix in ("", "Python_"):
+        for file_type in channel_names:
+            targets[f"{prefix}{file_type}"] = sesslog_dir / build_filename(
+                prefix, file_type, shell, session_name, session_id, username, seq=None
+            )
+    return targets
 
 
 # ============================================================================
@@ -226,11 +317,17 @@ def build_session_directory(session_name: Optional[str], session_id: str,
 
 
 def find_session_files(sesslog_dir: Path, session_id: str, prefix: str,
-                       file_type: str) -> list[Path]:
+                       file_type: str,
+                       listing: Optional[list[Path]] = None) -> list[Path]:
     """Find all files for a given session ID and file type.
 
     Matches both named and unnamed files, with or without sequence numbers.
     Handles both old files (no extension) and new files (.log extension).
+
+    `listing`: the directory's regular files, taken once by the caller via
+    list_session_dir() and shared across every per-basename lookup (the
+    2026-09-02 fix -- one listing per pass instead of one per basename).
+    Omitted, the function lists the directory itself.
     """
     # Pattern matches (with optional .log extension):
     #   .{prefix}{type}_{shell}_{guid}_{user}[.log]              (unnamed)
@@ -242,37 +339,30 @@ def find_session_files(sesslog_dir: Path, session_id: str, prefix: str,
     pattern = re.compile(
         rf"^\.{re.escape(prefix)}{re.escape(file_type)}_.+{re.escape(session_id)}_\w+(\.log)?$"
     )
-
-    matches = []
-    try:
-        for f in sesslog_dir.iterdir():
-            if f.is_file() and pattern.match(f.name):
-                matches.append(f)
-    except Exception as e:
-        debug_log(f"Error scanning sesslog_dir: {e}")
-
-    return matches
+    if listing is None:
+        listing = list_session_dir(sesslog_dir)
+    return [f for f in listing if pattern.match(f.name)]
 
 
 def find_max_sequence(sesslog_dir: Path, prefix: str, file_type: str, shell: str,
-                      session_name: str, session_id: str, username: str) -> int:
-    """Find the highest existing sequence number (--NNN) for this session."""
+                      session_name: str, session_id: str, username: str,
+                      listing: Optional[list[Path]] = None) -> int:
+    """Find the highest existing sequence number (--NNN) for this session.
+
+    `listing` as in find_session_files().
+    """
     # Pattern: .{prefix}{type}_{shell}__{name}--NNN__{guid}_{user}[.log]
     pattern = re.compile(
         rf"^\.{re.escape(prefix)}{re.escape(file_type)}_{re.escape(shell)}__"
         rf"{re.escape(session_name)}--(\d{{3}})__{re.escape(session_id)}_{re.escape(username)}(\.log)?$"
     )
-
+    if listing is None:
+        listing = list_session_dir(sesslog_dir)
     max_seq = -1
-    try:
-        for f in sesslog_dir.iterdir():
-            match = pattern.match(f.name)
-            if match:
-                seq = int(match.group(1))
-                max_seq = max(max_seq, seq)
-    except Exception:
-        pass
-
+    for f in listing:
+        match = pattern.match(f.name)
+        if match:
+            max_seq = max(max_seq, int(match.group(1)))
     return max_seq
 
 
@@ -393,12 +483,17 @@ def get_effective_session_name(session_id: str, session_name: Optional[str],
 
 def reconcile_single_category(sesslog_dir: Path, session_id: str, session_name: str,
                                shell: str, username: str, prefix: str,
-                               file_type: str) -> Optional[Path]:
+                               file_type: str,
+                               listing: Optional[list[Path]] = None) -> Optional[Path]:
     """Reconcile files for a single category and return the target path.
 
-    Returns the path to write to (the "current" file).
+    Returns the path to write to (the "current" file). `listing` as in
+    find_session_files() -- the caller's one-per-pass directory listing.
     """
-    files = find_session_files(sesslog_dir, session_id, prefix, file_type)
+    if listing is None:
+        listing = list_session_dir(sesslog_dir)
+    files = find_session_files(sesslog_dir, session_id, prefix, file_type,
+                               listing=listing)
 
     # Build target filename (what the current file should be named)
     target_name = build_filename(prefix, file_type, shell, session_name,
@@ -429,7 +524,8 @@ def reconcile_single_category(sesslog_dir: Path, session_id: str, session_name: 
 
     # Find highest existing sequence number
     max_seq = find_max_sequence(sesslog_dir, prefix, file_type, shell,
-                                 session_name, session_id, username)
+                                 session_name, session_id, username,
+                                 listing=listing)
 
     # Rename current file to target (no sequence) if needed
     if current_file.name != target_name:
@@ -459,7 +555,8 @@ def reconcile_single_category(sesslog_dir: Path, session_id: str, session_name: 
     return target_path
 
 
-def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
+def discover_channel_basenames(sesslog_dir: Path, session_id: str,
+                               listing: Optional[list[Path]] = None) -> set[str]:
     """Scan `sesslog_dir` for any channel basename present in filenames.
 
     Returns the set of basenames (e.g., "sesslog", "shell", "tools",
@@ -470,9 +567,14 @@ def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
     Pattern: leading `.{basename}_{shell}__...{session_id}_{user}[.log]`
     or unnamed form `.{basename}_{shell}_{session_id}_{user}[.log]`.
     Files not embedding the session GUID are skipped.
+
+    `listing` as in find_session_files() -- the caller's one-per-pass
+    directory listing.
     """
     if not sesslog_dir.exists():
         return set()
+    if listing is None:
+        listing = list_session_dir(sesslog_dir)
     escaped_id = re.escape(session_id)
     # Basename class allows hyphens for subtype-derived names ("shell-bash",
     # "agents-help") but deliberately EXCLUDES `_`: channel basenames never
@@ -483,15 +585,10 @@ def discover_channel_basenames(sesslog_dir: Path, session_id: str) -> set[str]:
     # opaque; the GUID is the trailing anchor.
     pattern = re.compile(rf"^\.([a-zA-Z0-9-]+)_.+{escaped_id}_\w+(\.log)?$")
     basenames: set[str] = set()
-    try:
-        for f in sesslog_dir.iterdir():
-            if not f.is_file():
-                continue
-            match = pattern.match(f.name)
-            if match:
-                basenames.add(match.group(1))
-    except OSError:
-        pass
+    for f in listing:
+        match = pattern.match(f.name)
+        if match:
+            basenames.add(match.group(1))
     return basenames
 
 
@@ -530,12 +627,24 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
 
     targets: dict[str, Path] = {}
 
+    # ONE listing for the whole pass (2026-09-02): every per-basename lookup
+    # below filters this list instead of re-reading the directory. Renames
+    # made while walking it cannot confuse a later basename -- a file
+    # matches exactly one `.{basename}_` prefix, so the sets are disjoint.
+    listing = list_session_dir(sesslog_dir)
+
     # Discover any subtype-derived basenames present on disk so we can
     # rename them too. Base names that are already in `channel_names` are
     # filtered out below (they get the full reconcile-and-target path).
-    discovered = discover_channel_basenames(sesslog_dir, session_id)
+    discovered = discover_channel_basenames(sesslog_dir, session_id, listing=listing)
     declared_set = set(channel_names)
     subtype_basenames = discovered - declared_set
+
+    # Observability only (2026-09-02 incident): an unusual number of derived
+    # basenames is the shape of "an axis is producing identifier-shaped
+    # subtypes". Warn once per session; never reroute or drop anything.
+    if len(subtype_basenames) > DERIVED_CHANNEL_WARN_THRESHOLD:
+        _warn_derived_growth_once(session_id, len(subtype_basenames))
 
     # All prefixes (Python_ kept for back-compat with v0.2.x file naming).
     prefixes = ["", "Python_"]
@@ -546,7 +655,7 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
             key = f"{prefix}{file_type}"
             target = reconcile_single_category(
                 sesslog_dir, session_id, session_name,
-                shell, username, prefix, file_type
+                shell, username, prefix, file_type, listing=listing
             )
             if target:
                 targets[key] = target
@@ -557,7 +666,7 @@ def reconcile_session_files(sesslog_dir: Path, session_id: str, session_name: st
         for prefix in prefixes:
             reconcile_single_category(
                 sesslog_dir, session_id, session_name,
-                shell, username, prefix, basename
+                shell, username, prefix, basename, listing=listing
             )
 
     return targets

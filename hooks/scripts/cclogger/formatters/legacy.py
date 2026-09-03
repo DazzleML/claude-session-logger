@@ -653,9 +653,17 @@ def format_tool_name(tool_info: ToolInfo) -> str:
         - "Bash" (main session)
         - "Bash|Explore" (running inside Explore subagent)
         - "Read|Plan" (running inside Plan subagent)
+        - "Bash|untyped/a000e885b41c764eb" (inside one of Claude Code's
+          untyped side-queries -- the bucket names the class, the id is
+          the only attribution; same rule as the AGENT:untyped/<id> report
+          label, 2026-09-02)
     """
-    if tool_info.agent_context:
-        return f"{tool_info.name}|{tool_info.agent_context}"
+    ctx = tool_info.agent_context
+    if ctx:
+        from cclogger.models import UNTYPED_AGENT_CLASSIFIER
+        if ctx == UNTYPED_AGENT_CLASSIFIER and tool_info.agent_id:
+            return f"{tool_info.name}|{ctx}/{tool_info.agent_id}"
+        return f"{tool_info.name}|{ctx}"
     return tool_info.name
 
 
@@ -785,4 +793,5 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
         timestamp=event_time,
         tool_name=tool_info.name,
         agent_context=tool_info.agent_context,
+        agent_id=tool_info.agent_id,
     )

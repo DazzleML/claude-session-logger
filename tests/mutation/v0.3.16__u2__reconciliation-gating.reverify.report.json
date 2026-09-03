@@ -1,0 +1,44 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\mut-root-u2",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_reconciliation_gating.py::TestSinglePassScan"
+    ],
+    "timestamp": "2026-09-03T02:39:45-04:00"
+  },
+  "results": [
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/reconciliation.py",
+      "note": "find_max_sequence tracks the minimum (killing test = test_sequence_assignment_uses_the_highest_existing_sequence).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/reconciliation.py",
+      "note": "discover admits an empty basename (killing test = test_discover_never_yields_an_empty_basename).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 2
+  },
+  "anomalies": []
+}

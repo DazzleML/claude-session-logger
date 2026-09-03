@@ -51,6 +51,14 @@ RESERVED_VERBOSITY_KEYS: set[str] = HINT_VERBOSITY_KEYS | PER_ROLE_RESERVED_KEYS
 # LogEntry attribute at emission; the router needs no change.
 COLLECT_RECOGNIZED_KEYS: set[str] = {"agent_context"}
 
+# Attribute names a channel may EXCLUDE on (ChannelOptions.exclude) -- the
+# subtractive mirror of collect, same grammar, same forward-compat rule
+# (unknown keys warn once and are ignored). 2026-09-02: lets a user hide
+# Claude Code's untyped side-query entries from any channel they choose
+# (`{"agent_context": ["untyped"]}` on convo, on agents, ...) while the
+# default stays "include everywhere".
+EXCLUDE_RECOGNIZED_KEYS: set[str] = {"agent_context"}
+
 
 # `parse_bool` and `_validate_per_role_dict` live in cclogger/config_merge.py.
 # Per the v0.3.7-pre Phase 6 refactor, models.py keeps to pure data
@@ -184,11 +192,63 @@ class ChannelOptions:
     # their category route gave them. Unknown keys warn once and are
     # ignored (configs from newer versions degrade gracefully).
     collect: Optional[dict] = None
+    # Subtractive mirror of `collect` (2026-09-02): entries this channel
+    # must NOT receive, same grammar keyed by entry attribute name:
+    #   {"agent_context": ["untyped"]}  -- hide Claude Code's untyped
+    #                                      side-query entries from THIS channel
+    #   {"agent_context": True}         -- hide every subagent entry here
+    # Evaluated after routing + collection + subtype expansion (exclude
+    # beats collect); derived `<base>-<subtype>` channels inherit the
+    # base's exclude unless declared themselves. Unknown keys warn once
+    # and are ignored. Default None: include everywhere (maintainer
+    # decision -- the untyped entries are part of the record).
+    exclude: Optional[dict] = None
 
 
 # ============================================================================
 # Data Classes
 # ============================================================================
+
+
+UNTYPED_AGENT_CLASSIFIER = "untyped"
+
+
+def resolve_agent_identity(data: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    """Resolve ``(classifier, agent_id)`` for a hook payload.
+
+    The classifier is the BOUNDED key a channel may split on (it names a
+    kind of agent); the id is per-instance identity that belongs on the
+    entry line and never in a filename. Evidence-based (#53 discriminator +
+    the 2026-09-02 incident, CLI 2.1.258):
+
+      * ``agent_id`` is present iff the event fired inside a subagent -- the
+        field the official hook schema documents for exactly this
+        distinction. A session launched with ``--agent`` carries
+        ``agent_type`` on its MAIN thread WITHOUT ``agent_id`` and must not
+        be labeled as subagent traffic (#53 AC-2) -> ``(None, None)``.
+      * Claude Code builds SubagentStop with ``agent_type: agentType ?? ''``
+        (utils/hooks.ts); its internal transcript-less side-queries
+        (activity summaries, prompt suggestions, session memory, ...) arrive
+        with an id and an EMPTY type. They are one-shot: one stop event
+        each, no tool calls, no transcript on disk (PoC 3, 1,530 ids across
+        three sessions). The pre-fix fallback ``agent_type or agent_id``
+        keyed the subtype on the id, minting one channel file per stop
+        (1,091 in one session) and making per-event reconciliation
+        quadratic. The classifier for that class is the fixed bucket
+        ``UNTYPED_AGENT_CLASSIFIER``; the id still travels, as ``agent_id``.
+      * The pre-#53 implementation walked speculative field names
+        (subagent_type, parent_agent, ...) that never appeared in real
+        payloads; deleted, not deprecated.
+
+    Self-contained on purpose (dazzle-loglib export candidate): pure
+    function of the payload -- no I/O, no config.
+    """
+    agent_id = data.get("agent_id")
+    if not agent_id:
+        return None, None
+    agent_type = str(data.get("agent_type") or "").strip()
+    classifier = agent_type or UNTYPED_AGENT_CLASSIFIER
+    return classifier, str(agent_id)
 
 
 @dataclass
@@ -201,13 +261,15 @@ class ToolInfo:
     session_id: str
     transcript_path: str
     raw_json: dict[str, Any]
-    agent_context: Optional[str] = None  # Subagent type if running in an agent
+    agent_context: Optional[str] = None  # Subagent classifier (type, or "untyped") if inside an agent
+    agent_id: Optional[str] = None  # Subagent instance id -- entry-level identity, never a filename key
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> ToolInfo:
         """Create ToolInfo from JSON input."""
-        # Detect agent context from various possible fields
-        agent_context = cls._detect_agent_context(data)
+        agent_context, agent_id = resolve_agent_identity(data)
+        if agent_context:
+            debug_log(f"Agent context: agent_type={agent_context} agent_id={agent_id}")
 
         return cls(
             name=data.get("tool_name", ""),
@@ -217,33 +279,8 @@ class ToolInfo:
             transcript_path=data.get("transcript_path", ""),
             raw_json=data,
             agent_context=agent_context,
+            agent_id=agent_id,
         )
-
-    @staticmethod
-    def _detect_agent_context(data: dict[str, Any]) -> Optional[str]:
-        """Detect if this tool call is from a subagent and return agent type.
-
-        Evidence-based discriminator (#53; platform research + live hook
-        traffic, CLI 2.1.229): the payload's `agent_id` is present if and
-        only if the event fired from inside a subagent -- it is the field
-        the official hook schema documents for exactly this distinction.
-        `agent_type` alone is NOT sufficient: a session launched with
-        `--agent` carries `agent_type` on its MAIN thread (without
-        `agent_id`), and keying on it would mislabel that entire session
-        as subagent traffic (#53 AC-2 regression-guards this). The
-        pre-#53 implementation walked speculative field names
-        (subagent_type, parent_agent, ...) that never appeared in real
-        payloads; deleted, not deprecated.
-
-        Identity comes from `agent_type` (e.g. "Explore", "oracle"),
-        falling back to `agent_id` if type is somehow absent.
-        """
-        if data.get("agent_id"):
-            agent_type = data.get("agent_type") or data.get("agent_id")
-            debug_log(f"Agent context: agent_type={agent_type}")
-            return str(agent_type)
-
-        return None
 
 
 # ============================================================================
@@ -645,7 +682,10 @@ class LogEntry:
       metadata:       formatter-specific extras (path, line, delta, mcp_server, etc.)
       timestamp:      event time (universal)
       tool_name:      original tool name for tool-derived entries (Edit, Bash, ...) — None for prose
-      agent_context:  subagent type if relevant
+      agent_context:  subagent classifier if relevant -- the agent's type, or the
+                      fixed bucket "untyped" for Claude Code's transcript-less
+                      side-queries (see models.resolve_agent_identity)
+      agent_id:       subagent instance id (per-line attribution; never a filename key)
       is_failure:     failure flag (default formatter adds [FAILED:] annotation)
       failure_reason: human-readable reason
       error_output:   captured stderr (multi-line OK)
@@ -657,6 +697,7 @@ class LogEntry:
     timestamp: Optional[datetime] = None
     tool_name: Optional[str] = None
     agent_context: Optional[str] = None
+    agent_id: Optional[str] = None
     is_failure: bool = False
     failure_reason: Optional[str] = None
     error_output: Optional[str] = None

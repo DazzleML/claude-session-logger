@@ -1,0 +1,154 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\mut-root",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_exclude_predicate.py",
+      "tests/one-offs/test_agent_context_routing.py::TestCollectMerge",
+      "tests/one-offs/test_agent_context_routing.py::TestCollectEvaluator"
+    ],
+    "timestamp": "2026-09-03T02:40:38-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "recognized-key guard inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "non-string list items no longer filtered.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "`is True` widened to truthiness.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "empty dict no longer collapses to None.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/debug.py",
+      "note": "warn-once becomes warn-always.",
+      "verdict": "apply-failed",
+      "restore_ok": true,
+      "output_tail": "M5: expected exactly 1 occurrence of the original text in hooks/scripts/cclogger/debug.py, found 4"
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/debug.py",
+      "note": "sentinel-name sanitizer negation dropped.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "recognized keys emptied.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "default None -> {} (contradicts the documented default).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "list membership inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "True-form check inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "missing-attribute guard inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "derived-channel inheritance inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S1",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "SUPPLEMENT: evaluator inert.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S2",
+      "file": "hooks/scripts/cclogger/logger.py",
+      "note": "SUPPLEMENT: declared-channel filter inert (derived inheritance still active).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "S3",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "SUPPLEMENT: merge ignores exclude (user config silently dropped).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 13,
+    "apply-failed": 1,
+    "survived": 1
+  },
+  "anomalies": [
+    "M5: apply failed -- M5: expected exactly 1 occurrence of the original text in hooks/scripts/cclogger/debug.py, found 4"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "_about": "U3 round 2 (2026-09-03): M5 re-anchored (round-1 spec text matched both warn-once functions -> apply-failed) and M6 re-verified against the two new tests.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_exclude_predicate.py::TestExcludeMerge"],
+  "mutations": [
+    {"id": "M5", "file": "hooks/scripts/cclogger/debug.py", "original": "        sentinel = UNKNOWN_EXCLUDE_KEY_WARN_DIR / f\"{safe_name}.warned\"\n        try:\n            sentinel.open(\"x\").close()\n        except FileExistsError:\n            return", "mutated": "        sentinel = UNKNOWN_EXCLUDE_KEY_WARN_DIR / f\"{safe_name}.warned\"\n        try:\n            sentinel.open(\"x\").close()\n        except FileExistsError:\n            pass", "note": "warn-once becomes warn-always (killing test = test_unknown_key_warns_exactly_once)."},
+    {"id": "M6", "file": "hooks/scripts/cclogger/debug.py", "original": "        UNKNOWN_EXCLUDE_KEY_WARN_DIR.mkdir(parents=True, exist_ok=True)\n        safe_name = re.sub(r\"[^A-Za-z0-9_\\-.]\", \"_\", key)", "mutated": "        UNKNOWN_EXCLUDE_KEY_WARN_DIR.mkdir(parents=True, exist_ok=True)\n        safe_name = re.sub(r\"[A-Za-z0-9_\\-.]\", \"_\", key)", "note": "sanitizer negation dropped (killing test = test_distinct_unknown_keys_get_distinct_sentinels)."}
+  ]
+}

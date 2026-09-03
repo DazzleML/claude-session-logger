@@ -83,8 +83,16 @@ class TestDiscriminator:
         # Verbatim platform fact turned test (AC-2).
         assert self._ctx({"agent_type": "Explore"}) is None
 
-    def test_agent_id_alone_falls_back_to_id(self):
-        assert self._ctx({"agent_id": "a1"}) == "a1"
+    def test_agent_id_with_empty_or_missing_type_yields_untyped_bucket(self):
+        # 2026-09-02 incident: Claude Code's transcript-less side-queries
+        # stop with an agent_id and an EMPTY agent_type (`agentType ?? ''`).
+        # The classifier is the bounded bucket, never the per-instance id --
+        # keying on the id minted 1,091 one-line channel files in one session.
+        # Pins the pre-fix fallback (`agent_type or agent_id`) as WRONG.
+        assert self._ctx({"agent_id": "a1"}) == "untyped"
+        assert self._ctx({"agent_id": "a1", "agent_type": ""}) == "untyped"
+        assert self._ctx({"agent_id": "a1", "agent_type": "   "}) == "untyped"
+        assert self._ctx({"agent_id": "a1", "agent_type": None}) == "untyped"
 
     def test_plain_main_session_none(self):
         assert self._ctx({}) is None

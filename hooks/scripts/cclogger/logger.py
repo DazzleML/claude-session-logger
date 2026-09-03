@@ -20,6 +20,7 @@ from cclogger.file_io import (
     atomic_append,
     check_time_gap,
     migrate_overflow_files,
+    migrate_untyped_agent_files,
     sweep_orphan_session_name_files,
 )
 from cclogger.formatters import format_datetime, format_for_channel
@@ -32,9 +33,12 @@ from cclogger.markers import (
 )
 from cclogger.models import Config, SessionContext
 from cclogger.reconciliation import (
+    build_channel_targets,
     get_effective_session_name,
+    read_reconciled_stamp,
     reconcile_session_directory,
     reconcile_session_files,
+    write_reconciled_stamp,
 )
 
 
@@ -86,6 +90,17 @@ class SessionLogger:
                     self.effective_name,
                     self.session.session_id,
                 )
+            # v0.3.16 (2026-09-02 incident): fold legacy per-instance
+            # `.agents-a<16hex>_*` files into the single untyped feed.
+            # Runs AFTER `_reconcile_files` (names stable) and the orphan
+            # sweep, BEFORE the marker. Sentinel-gated: once per directory.
+            migrate_untyped_agent_files(
+                self.session_dir,
+                self.session.session_id,
+                self.effective_name,
+                self.session.shell_type,
+                self.session.username,
+            )
 
         # Handle session start marker
         self._maybe_write_session_marker()
@@ -107,26 +122,50 @@ class SessionLogger:
         return session_dir
 
     def _reconcile_files(self) -> None:
-        """Reconcile session files (rename unnamed files, assign sequences)."""
+        """Reconcile session files (rename unnamed files, assign sequences).
+
+        Gated (2026-09-02 incident): the directory's stamp
+        (`.session-logger-reconciled`, see reconciliation.py) records the
+        effective name its files currently embed. On the steady state --
+        stamp matches and this is not the first event of a run -- the write
+        targets are computed without listing the directory at all. The full
+        pass runs when the stamp is absent or stale (every rename path
+        leaves it stale) and unconditionally on the first event of each run
+        (self-heal for anything renamed by hand between runs). Before this
+        gate the full pass ran on every hook event, quadratic in the file
+        count once every untyped subagent was its own basename.
+
+        Pass every declared channel so reconciliation covers tools/convo/
+        unknowns/agents/fileio (Bug B fix, v0.3.7-pre). Subtype derivatives
+        found via the filesystem listing are reconciled in-place inside the
+        function and not added to the target-paths dict.
+        """
         if self._reconciled:
             return
 
-        # Get username from session
         username = self.session.username
+        channel_names = list(self.config.routing.channels.keys())
 
-        # Reconcile all file categories within the session directory.
-        # Pass every declared channel so reconciliation covers tools/convo/
-        # unknowns/agents/fileio (Bug B fix, v0.3.7-pre). Subtype derivatives
-        # found via filesystem scan are reconciled in-place inside the
-        # function and not added to the target-paths dict.
-        self._target_paths = reconcile_session_files(
-            self.session_dir,
-            self.session.session_id,
-            self.effective_name,
-            self.session.shell_type,
-            username,
-            channel_names=list(self.config.routing.channels.keys()),
-        )
+        stamp = read_reconciled_stamp(self.session_dir)
+        if stamp == self.effective_name and not is_new_session_run(self.session.session_id):
+            self._target_paths = build_channel_targets(
+                self.session_dir,
+                self.session.session_id,
+                self.effective_name,
+                self.session.shell_type,
+                username,
+                channel_names,
+            )
+        else:
+            self._target_paths = reconcile_session_files(
+                self.session_dir,
+                self.session.session_id,
+                self.effective_name,
+                self.session.shell_type,
+                username,
+                channel_names=channel_names,
+            )
+            write_reconciled_stamp(self.session_dir, self.effective_name)
         self._reconciled = True
 
     def _get_file_path(self, file_type: str) -> Path:
@@ -395,6 +434,43 @@ class SessionLogger:
                         break
         return results
 
+    def _exclude_channels_for_entry(self, entry: Any) -> set[str]:
+        """Evaluate every declared channel's `exclude` predicate against an
+        emitted entry -- the subtractive mirror of _collect_channels_for_entry
+        (2026-09-02; the maintainer's rule: hide "at each respective level
+        where the user CHOOSES to hide").
+
+        Returns the set of DECLARED channel names whose predicate matched.
+        log_entry applies it after routing + collection + subtype expansion,
+        so exclude beats collect; derived `<base>-<subtype>` names inherit
+        the base channel's verdict unless declared themselves
+        (declare-to-override, same idiom as _resolve_channel_options).
+        Attribute-generic like collect (AC-10): getattr by key, normalized
+        on both sides, entries without the attribute never match. With no
+        `exclude` configured anywhere (the default) nothing is excluded.
+        """
+        excluded: set[str] = set()
+        for name, channel_obj in self.config.routing.channels.items():
+            opts = self._resolve_channel_options(channel_obj, name)
+            spec_map = getattr(opts, "exclude", None) if opts is not None else None
+            if not spec_map:
+                continue
+            for key, spec in spec_map.items():
+                raw = getattr(entry, key, None)
+                if not raw:
+                    continue
+                normalized = normalize_subtype(raw)
+                if not normalized:
+                    continue
+                if spec is True:
+                    excluded.add(name)
+                    break
+                if isinstance(spec, list):
+                    if normalized in {normalize_subtype(s) for s in spec}:
+                        excluded.add(name)
+                        break
+        return excluded
+
     def log_entry(
         self,
         entry,  # str (transitional, conversation.py until Step 6) or LogEntry
@@ -437,6 +513,10 @@ class SessionLogger:
             collect_sources=collect_sources,
         )
 
+        # exclude (2026-09-02): the subtractive mirror of collect, applied
+        # LAST so it beats routing, collection and subtype expansion alike.
+        excluded = self._exclude_channels_for_entry(entry)
+
         # Track time gaps per channel to avoid duplicate gap checks
         gap_cache: dict[Path, bool] = {}
 
@@ -453,6 +533,13 @@ class SessionLogger:
                 channel = self.config.routing.channels.get(
                     channel_name.partition("-")[0])
             if channel and not channel.enabled:
+                continue
+            # Declared channel -> its own exclude verdict; derived name ->
+            # inherit the base's (declare-to-override, omit-to-inherit).
+            if channel_name in self.config.routing.channels:
+                if channel_name in excluded:
+                    continue
+            elif channel_name.partition("-")[0] in excluded:
                 continue
 
             try:
