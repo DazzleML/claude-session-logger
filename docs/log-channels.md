@@ -23,6 +23,8 @@ claude-session-logger creates separate log files for different types of activity
 [[2026-01-29 10:31:02]] {Write: /path/to/new_file.py}
 ```
 
+Every entry's frame braces pair even when the body contains an unmatched brace (the body stays verbatim; the balance is restored outside the frame) -- see "Entry framing: the braces always match" in `channels.md`.
+
 **Use cases**:
 - Quick scan of what Claude did in a session
 - Identify which files were touched

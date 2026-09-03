@@ -110,7 +110,12 @@ def format_for_channel(
         formatter_cls = DefaultFormatter
 
     formatter = formatter_cls(channel_opts, channel_name, config)
-    return formatter.format(entry)
+    # Frame integrity (2026-09-03, cclogger.frame): every assembled entry
+    # passes through pad_frame once. The body stays verbatim; unmatched
+    # body braces are balanced OUTSIDE the frame (`{{USER:` / `}}}`), so an
+    # editor's brace jump from the entry's first `{` lands on its last `}`.
+    from cclogger.frame import pad_frame
+    return pad_frame(formatter.format(entry))
 
 
 __all__ = [

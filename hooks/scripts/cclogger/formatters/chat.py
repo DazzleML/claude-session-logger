@@ -70,7 +70,9 @@ class ChatFormatter(BaseFormatter):
         datetime_part = format_datetime(datetime_mode, entry.timestamp)
 
         if newline_policy == NewlinePolicy.RENDER:
-            # Multi-line readable: `[[ts]] {USER:\n<body>\n}`
+            # Multi-line readable: `[[ts]] {USER:\n<body>\n}`. The body is
+            # verbatim; frame integrity for a body with unmatched braces is
+            # added outside the frame by cclogger.frame.pad_frame at dispatch.
             return f"{datetime_part}{{{label}:\n{body}\n}}"
 
         # ESCAPE fallback: collapse to single line, same shape as default

@@ -4,6 +4,12 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.18] - 2026-09-03
+
+### Fixed
+- **Every entry's frame braces now pair, whatever the body contains.** The way to walk a log is the editor's brace jump (vim `%`, VS Code "Go to Bracket") from an entry's opening `{` to its closing `}`, and editors count every brace in a plain-text file. A body holding an unmatched brace (a prompt that quotes a log entry, a command like `echo "{"`, a preview cut inside a pair) used to capture the frame's partner, so the entry could not be bounded; one live conversation file had 24 such bodies. The body is still recorded verbatim; the balance is restored outside the frame: one extra `}` after the closing brace for every unmatched `{` in the body (a body with two ends `}}}`), one extra `{` after the opening brace for every unmatched `}` (`{{USER:`). The frame's braces stay the outermost pair, the count of extras says how many strays the body holds, and balanced bodies get no extra braces, so existing logs keep their exact shape. Applied once at the formatter dispatch point, so every channel is covered, including the single-line tool entries and the tasks channel. Two other fixes were tried and rejected on the way: completing a stray in place as `{}` alters what was recorded (`dict = {` is not `dict = {}`), and indenting body lines does nothing for the brace jump while costing width in a narrow terminal. Documented under "Entry framing" in `docs/channels.md`.
+- Tests: `test_render_frame.py` (81; suite 529 -> 610), mutation sweep under `tests/mutation/` (12 of 12 killed after one killable survivor), the proof-of-concept that measured the live file, and a human checklist under `tests/checklists/`.
+
 ## [0.3.17] - 2026-09-03
 
 Verification round for the 0.3.16 interim; no runtime behavior change. Mutation sweeps on the legacy-file migration and the hook self-observability units found tests that pinned the happy path but not the ordering, once-only and boundary contracts; those tests now exist. The report-leg fix and the docs pass remain open (see "Known, not yet fixed" under 0.3.16).

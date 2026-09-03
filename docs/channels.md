@@ -137,6 +137,15 @@ The subtype value itself is extracted per category:
 | `meta` | For Task subagent invocations, extract the subagent_type. |
 | `skill` | For Skill invocations, extract the skill name from the input. |
 
+## Entry framing: the braces always match
+
+Every entry is framed as `{LABEL: body }` (one line) or, in a `render` channel, `{LABEL:` / body / `}`. The way to walk a log is the editor's brace jump (vim `%`, VS Code bracket matching) from an entry's first `{` to its last `}` -- and editors count every brace in a plain-text file, including the ones inside a body. The body is recorded **verbatim**, so the balance is restored outside the frame:
+
+- for every `{` in the body with no partner, one extra `}` is appended after the frame's closing brace: a body with two unclosed braces ends `}}}`;
+- for every `}` in the body with no partner, one extra `{` is inserted after the frame's opening brace: `{{USER:`.
+
+The frame's own braces are always the outermost pair, so the jump from the first `{` lands on the last `}` in every channel, and the number of extra braces says how many strays the body holds -- without guessing where they belong. Balanced bodies (code, JSON, `re:{ ... }` blocks) get no extra braces at all. (Before v0.3.18 a body containing an unbalanced `{` left the entry's frame unmatched for the jump.)
+
 ## Configuration
 
 Either layout works (loader auto-detects):

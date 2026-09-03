@@ -63,7 +63,7 @@ Every channel accepts an `options` object under `routing.channels.<name>.options
 |--------|--------|---------|----------|
 | `verbosity` | `"full"` / `"preview"` / `"name-only"` / `{"max_chars": N}` / `{"max_lines": N}` / per-role map | global preview length | how much of each entry this channel shows |
 | `formatter` | `"default"` / `"chat"` / `"task-only"` | `"default"` | the entry's overall shape (`{ROLE: ...}` hybrid-json, chat-log blocks, task-only lines) |
-| `newline_policy` | `"escape"` / `"render"` | `"escape"` | sub-option of the `default` formatter: literal `\n` (grep-friendly single line) vs real newlines |
+| `newline_policy` | `"escape"` / `"render"` | `"escape"` | sub-option of the `default` formatter: literal `\n` (grep-friendly single line) vs real newlines. In every channel the entry's frame braces stay matched whatever the body contains (see "Entry framing" in `channels.md`) |
 | `role_labels` | `{role: "LABEL"}` | built-ins | display labels (`{USER:`, `{Bash\|Explore:` ...) |
 | `suppress_markers` | `true`/`false` | `false` | opt this channel out of SESSION START / COMPACT markers |
 | `subtype_split` | `false` / `true` / `["name", ...]` | `false` (`true` on `agents`) | split the stream into `.channel-subtype_*` sibling files (section below) |

@@ -159,6 +159,11 @@ class BaseFormatter:
         _warn_unknown_role_once(role)
         return f"??:{role}"
 
+    # Entry framing (2026-09-03): the body of an entry is always verbatim.
+    # Frame integrity for a body with unmatched braces is added OUTSIDE the
+    # frame, once, at dispatch (formatters.format_for_channel ->
+    # cclogger.frame.pad_frame), never here.
+
     def _apply_newline_policy(
         self, text: str, policy: NewlinePolicy
     ) -> str:
