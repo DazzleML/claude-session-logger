@@ -1,0 +1,85 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u4",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_untyped_migration.py"
+    ],
+    "timestamp": "2026-09-03T13:38:42-04:00"
+  },
+  "results": [
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "sorted() dropped (killing test = test_equal_stamps_keep_filename_order).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "entry boundary or -> and (killing test = test_interleaved_stamps_across_files_merge_per_entry).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "continue dropped (killing test = test_unreadable_file_is_left_in_place_not_moved).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "banner after entries (killing test = test_banner_leads_the_migrated_block).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "collision loop -> if (killing test = test_repeated_collisions_get_distinct_suffixes).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "wrong sentinel kind (killing test = test_sentinel_body_describes_this_sweep).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "stamp regex loses ^ (killing test = test_embedded_stamp_in_a_continuation_line_does_not_split).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "survived": 2,
+    "killed": 5
+  },
+  "anomalies": []
+}

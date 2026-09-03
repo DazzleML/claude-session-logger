@@ -140,6 +140,23 @@ class TestDerivedGrowthWarnOnce:
     def test_sixty_three_do_not_warn(self, tmp_path, monkeypatch):
         assert self._reconcile_with(tmp_path, 63, monkeypatch) == []
 
+    def test_exactly_the_threshold_does_not_warn(self, tmp_path, monkeypatch):
+        """Kills M9 (> vs >=): 64 derived basenames is not 'more than 64'."""
+        assert self._reconcile_with(tmp_path, 64, monkeypatch) == []
+
+    def test_warning_fires_once_and_names_the_count(self, tmp_path, monkeypatch):
+        """Kills M6 (warn-once -> warn-always) and M7 (threshold reported in
+        place of the observed count)."""
+        import cclogger.debug as dbg
+        calls = []
+        monkeypatch.setattr(dbg, "debug_log", lambda m: calls.append(m))
+        self._reconcile_with(tmp_path, 65, monkeypatch)
+        from cclogger.reconciliation import reconcile_session_files
+        reconcile_session_files(tmp_path, GUID, "name", SHELL, USER, channel_names=["sesslog", "tools"])
+        growth = [c for c in calls if "DERIVED-GROWTH" in c]
+        assert len(growth) == 1, growth
+        assert "derived_basenames=65 " in growth[0], growth[0]
+
     def test_warning_never_changes_routing(self, tmp_path, monkeypatch):
         """AC-9 is observability only: every derived file is still reconciled."""
         self._reconcile_with(tmp_path, 70, monkeypatch)

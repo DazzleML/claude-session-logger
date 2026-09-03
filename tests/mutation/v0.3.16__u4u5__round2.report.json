@@ -1,0 +1,61 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-r2",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_untyped_migration.py",
+      "tests/one-offs/test_hook_observability.py"
+    ],
+    "timestamp": "2026-09-03T13:42:36-04:00"
+  },
+  "results": [
+    {
+      "id": "U4-M3",
+      "file": "hooks/scripts/cclogger/file_io.py",
+      "note": "sorted() dropped (killing test = test_order_does_not_depend_on_directory_listing_order).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "U5-M6",
+      "file": "hooks/scripts/cclogger/debug.py",
+      "note": "warn-once -> warn-always (killing test = test_warning_fires_once_and_names_the_count).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "U5-M7",
+      "file": "hooks/scripts/cclogger/debug.py",
+      "note": "count replaced by threshold (killing test = test_warning_fires_once_and_names_the_count).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "U5-M9",
+      "file": "hooks/scripts/cclogger/reconciliation.py",
+      "note": "> vs >= (killing test = test_exactly_the_threshold_does_not_warn).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 4
+  },
+  "anomalies": []
+}

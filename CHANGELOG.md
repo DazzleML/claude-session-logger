@@ -4,6 +4,20 @@ All notable changes to claude-session-logger will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.17] - 2026-09-03
+
+Verification round for the 0.3.16 interim; no runtime behavior change. Mutation sweeps on the legacy-file migration and the hook self-observability units found tests that pinned the happy path but not the ordering, once-only and boundary contracts; those tests now exist. The report-leg fix and the docs pass remain open (see "Known, not yet fixed" under 0.3.16).
+
+### Changed
+- The in-flight marker call site in `log-command.py` passes its three fields by keyword, so a swapped argument order can no longer compile silently (a mutation that survived the first sweep).
+
+### Added
+- Tests: `test_untyped_migration.py` gains a listing-order guard (merge order must not depend on how the filesystem lists names; NTFS already lists them sorted, which masked the first attempt); `test_hook_observability.py` gains an exact-threshold case (64 derived basenames does not warn) and a warn-once case that asserts the observed count is reported, not the threshold. Suite 526 -> 529.
+- `tests/mutation/`: specs and reports for the migration re-verify and the two self-observability rounds, one sweep summary per unit, and `equivalents.md`, the hash-guarded record of mutants judged equivalent (a redundant `^` under `re.match`, two float boundaries) so a later sweep can tell a known equivalent from a regression.
+
+### Fixed
+- Every `.report.json` under `tests/mutation/` (ten files, seven of them shipped in 0.3.16) was not valid JSON: the redacted scratchpad path in the `root` field kept a raw backslash, an invalid escape. The separator is now a forward slash and every report parses; the one-shot repair is kept as `tests/one-offs/thinking/fix_mutation_report_paths.py`.
+
 ## [0.3.16] - 2026-09-03
 
 Interim snapshot of the 2026-09-02 incident fix: Claude Code's internal background forks (activity summaries, prompt suggestions, memory extraction) stop with an `agent_id` and an **empty** `agent_type`; the v0.3.11 identity fallback keyed the agents channel's split on the id, minting one one-line `.agents-a<16hex>_*` file per fork (1,091 in one session, 25 of 528 session directories on the dev box), and per-event file reconciliation then re-listed the directory once per file with a stat per entry -- quadratic, 5-60 s per hook event, "UserPromptSubmit hook timed out after 30s". Verification of two units and the docs pass are still open; see the whereweare and postmortem dated 2026-09-03 in the project-private notes.

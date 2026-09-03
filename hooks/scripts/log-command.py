@@ -111,7 +111,8 @@ def main() -> None:
     global _INFLIGHT
     _CTX.update(session_id=json_input.get("session_id", "unknown"),
                 event=hook_event_name, tool=json_input.get("tool_name", ""))
-    _INFLIGHT = begin_inflight(_CTX["session_id"], hook_event_name, _CTX["tool"])
+    _INFLIGHT = begin_inflight(session_id=_CTX["session_id"], event=hook_event_name,
+                               tool=_CTX["tool"])  # keywords: an argument-order slip cannot compile silently
     report_stale_inflight()
     _TIMER.mark("parsed")
 

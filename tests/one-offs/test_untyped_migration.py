@@ -154,6 +154,21 @@ class TestMigrateUntypedAgentFiles:
         text = _feed(tmp_path).read_text(encoding="utf-8")
         assert text.index("LEGACY-0010-0") < text.index("LEGACY-0011-0")
 
+    def test_order_does_not_depend_on_directory_listing_order(self, tmp_path, monkeypatch):
+        """Kills M3 (sorted() dropped) even on filesystems that already list
+        names in order (NTFS): force a reversed listing; equal-stamp entries
+        must still merge by filename."""
+        import cclogger.reconciliation as rec
+        real = rec.list_session_dir
+        monkeypatch.setattr(rec, "list_session_dir", lambda d: list(reversed(real(d))))
+        from cclogger.file_io import migrate_untyped_agent_files
+        ts = datetime(2026, 8, 21, 3, 30, 0)
+        for i in (0xC, 0xA, 0xB):
+            _legacy(tmp_path, i, ts)
+        migrate_untyped_agent_files(tmp_path, GUID, NAME, SHELL, USER)
+        text = _feed(tmp_path).read_text(encoding="utf-8")
+        assert text.index("LEGACY-0010-0") < text.index("LEGACY-0011-0") < text.index("LEGACY-0012-0")
+
     def test_interleaved_stamps_across_files_merge_per_entry(self, tmp_path):
         """Kills M5 (entry boundary or -> and): a file's second entry must
         sort on its OWN stamp, not travel with the file's first entry."""

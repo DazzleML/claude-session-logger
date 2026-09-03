@@ -6,7 +6,7 @@
   "environment": {
     "python": "3.12.0",
     "platform": "Windows-11-10.0.26200-SP0",
-    "root": "<session-scratchpad>\mut-root-u2",
+    "root": "<session-scratchpad>/mut-root-u2",
     "test_command": [
       "python",
       "-B",

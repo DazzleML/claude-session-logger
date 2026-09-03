@@ -1,0 +1,10 @@
+{
+  "_about": "Round 2 for the killable survivors of U4 re-verify (M3) and the U5 sweep (M6, M7, M9), 2026-09-03, against the four tests written for them. Equivalent/don't-care survivors are recorded in tests/mutation/equivalents.md.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_untyped_migration.py", "tests/one-offs/test_hook_observability.py"],
+  "mutations": [
+    {"id": "U4-M3", "file": "hooks/scripts/cclogger/file_io.py", "original": "    for f in sorted(legacy, key=lambda p: p.name):", "mutated": "    for f in legacy:", "note": "sorted() dropped (killing test = test_order_does_not_depend_on_directory_listing_order)."},
+    {"id": "U5-M6", "file": "hooks/scripts/cclogger/debug.py", "original": "        sentinel = warn_dir / f\"{safe}.warned\"\n        try:\n            sentinel.open(\"x\").close()\n        except FileExistsError:\n            return", "mutated": "        sentinel = warn_dir / f\"{safe}.warned\"\n        try:\n            sentinel.open(\"x\").close()\n        except FileExistsError:\n            pass", "note": "warn-once -> warn-always (killing test = test_warning_fires_once_and_names_the_count)."},
+    {"id": "U5-M7", "file": "hooks/scripts/cclogger/debug.py", "original": "derived_basenames={count} \"", "mutated": "derived_basenames={DERIVED_CHANNEL_WARN_THRESHOLD} \"", "note": "count replaced by threshold (killing test = test_warning_fires_once_and_names_the_count)."},
+    {"id": "U5-M9", "file": "hooks/scripts/cclogger/reconciliation.py", "original": "    if len(subtype_basenames) > DERIVED_CHANNEL_WARN_THRESHOLD:", "mutated": "    if len(subtype_basenames) >= DERIVED_CHANNEL_WARN_THRESHOLD:", "note": "> vs >= (killing test = test_exactly_the_threshold_does_not_warn)."}
+  ]
+}
