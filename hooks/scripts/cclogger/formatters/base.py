@@ -56,43 +56,95 @@ class BaseFormatter:
         """#55/#50: the normalized agent identity this channel should show,
         or None when suppressed by ChannelOptions.agent_label:
 
-          "always" -> show whenever the entry carries agent_context
-          "auto"   -> as always, EXCEPT when the identity merely repeats
-                      this channel's own subtype suffix (an entry from the
-                      Explore agent inside `.agents-explore_*` -- the
-                      filename already says who)
-          "never"  -> never show
+          "always"  -> show whenever the entry carries agent_context
+          "auto"    -> as always, EXCEPT when the identity merely repeats
+                       this channel's own subtype suffix (an entry from the
+                       Explore agent inside `.agents-explore_*` -- the
+                       filename already says who)
+          "never"   -> never show
+          "id"      -> as always, with the agent's id: ``explore/a7c41e0b``
+          "auto-id" -> as auto, with the id; inside `.agents-explore_*` the
+                       type is dropped and the id kept: ``a7c41e0b``
 
         Returns the normalize_subtype() form so displayed identity always
-        matches per-agent file naming.
+        matches per-agent file naming. The id is its label form (the first
+        AGENT_ID_LABEL_CHARS characters -- unit 7, 2026-09-03).
 
         Untyped bucket (2026-09-02): entries whose classifier is the fixed
-        "untyped" bucket render as ``untyped/<agent_id>`` -- the bucket names
-        a CLASS, and the per-instance id is the only attribution the line can
-        carry (no transcript exists for these agents). Under ``auto`` inside
-        ``.agents-untyped_*`` the class part is dropped like any other
-        filename repeat, but the id is kept: ``<agent_id>``.
+        "untyped" bucket carry the id in EVERY mode that shows identity --
+        the bucket names a CLASS, and the per-instance id is the only
+        attribution the line can carry (no transcript exists for these
+        agents): ``untyped/a000e885``, or ``a000e885`` inside
+        ``.agents-untyped_*`` under the auto forms. That was the special
+        case; the id modes make it the general rule.
         """
         ctx = getattr(entry, "agent_context", None)
         if not ctx:
             return None
-        mode = "always"
-        if self.channel_opts is not None:
-            mode = getattr(self.channel_opts, "agent_label", "always") or "always"
+        mode = self._agent_label_mode()
         if mode == "never":
             return None
         from cclogger.categorize import normalize_subtype
-        from cclogger.models import UNTYPED_AGENT_CLASSIFIER
+        from cclogger.models import (
+            AGENT_LABEL_AUTO_MODES,
+            AGENT_LABEL_ID_MODES,
+            UNTYPED_AGENT_CLASSIFIER,
+            short_agent_id,
+        )
         norm = normalize_subtype(ctx)
         if not norm:
             return None
-        repeats_filename = mode == "auto" and self.channel_name.endswith(f"-{norm}")
-        agent_id = getattr(entry, "agent_id", None)
-        if norm == UNTYPED_AGENT_CLASSIFIER and agent_id:
-            return str(agent_id) if repeats_filename else f"{norm}/{agent_id}"
+        repeats_filename = (
+            mode in AGENT_LABEL_AUTO_MODES and self.channel_name.endswith(f"-{norm}")
+        )
+        with_id = mode in AGENT_LABEL_ID_MODES or norm == UNTYPED_AGENT_CLASSIFIER
+        short = short_agent_id(getattr(entry, "agent_id", None)) if with_id else None
+        if short:
+            return short if repeats_filename else f"{norm}/{short}"
         if repeats_filename:
             return None
         return norm
+
+    def _agent_label_mode(self) -> str:
+        """This channel's ChannelOptions.agent_label, defaulting to always."""
+        if self.channel_opts is None:
+            return "always"
+        return getattr(self.channel_opts, "agent_label", "always") or "always"
+
+    def _tool_label(self, entry: Any) -> Optional[str]:
+        """The label a tool entry made INSIDE an agent gets in this channel,
+        or None when the strings baked at generation already say it.
+
+        generate_entry bakes the `always` rendering (`{Bash|Explore: ...}`,
+        the v0.3.6 case preserved byte for byte) plus a template with a
+        label sentinel. The three other forms are this channel's to fill:
+        `Bash` (never, or auto inside the agent's own file), and under the
+        id modes `Bash|explore/a7c41e0b` or, inside the agent's own file,
+        `Bash|a7c41e0b` -- the same identity the prose labels show.
+        """
+        if not getattr(entry, "agent_context", None):
+            return None
+        metadata = getattr(entry, "metadata", None)
+        base = metadata.get("tool_display_base") if isinstance(metadata, dict) else None
+        if not isinstance(base, str):
+            return None
+        identity = self._agent_identity_for_display(entry)
+        if identity is not None and self._agent_label_mode() in ("always", "auto"):
+            return None
+        return f"{base}|{identity}" if identity else base
+
+    def _agent_id_suffix(self, entry: Any) -> str:
+        """Under the id modes the START/STOP bracket lines carry the full id
+        once, inside the frame (` [id a7c41e0b9d2f53e18]`), so the short form
+        on every other line maps back without leaving the log. Empty for
+        every other role and mode."""
+        if getattr(entry, "role", None) not in ("agent-start", "agent-stop"):
+            return ""
+        from cclogger.models import AGENT_LABEL_ID_MODES
+        if self._agent_label_mode() not in AGENT_LABEL_ID_MODES:
+            return ""
+        agent_id = getattr(entry, "agent_id", None)
+        return f" [id {agent_id}]" if agent_id else ""
 
     def _resolve_max_chars(self, role: str, tool_name: Optional[str]) -> int:
         """Return effective max_chars for this entry per channel options.
@@ -163,6 +215,23 @@ class BaseFormatter:
     # Frame integrity for a body with unmatched braces is added OUTSIDE the
     # frame, once, at dispatch (formatters.format_for_channel ->
     # cclogger.frame.pad_frame), never here.
+
+    def _display_role(self, entry: Any) -> str:
+        """The role whose label this entry displays under (2026-09-03).
+
+        The entry's own role ("ai", "agent", ...) keeps driving verbosity
+        and newline resolution; a thinking entry (LogEntry.kind ==
+        "thinking") displays under "think" (main thread) or "agent-think"
+        (inside an agent) instead, so per-channel role_labels can rename
+        either. Everything else displays under its own role.
+        """
+        role = getattr(entry, "role", None) or "unknown"
+        if getattr(entry, "kind", None) == "thinking":
+            if role == "agent":
+                return "agent-think"
+            if role == "ai":
+                return "think"
+        return role
 
     def _apply_newline_policy(
         self, text: str, policy: NewlinePolicy

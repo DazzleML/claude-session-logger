@@ -1,0 +1,36 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\\mut-root-u7",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_agent_id_label.py"
+    ],
+    "timestamp": "2026-09-03T23:00:29-04:00"
+  },
+  "results": [
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: the labelled summary template loses the trailing marker -- id-mode template entries drop the marker that the always-mode summary still carries, so the two renderings diverge.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 1
+  },
+  "anomalies": []
+}

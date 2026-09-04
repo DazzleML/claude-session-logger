@@ -130,8 +130,15 @@ class TestExcludeMerge:
         assert self._merged({"agent_context": False}, monkeypatch, tmp_path) is None
 
     def test_default_is_no_exclusion_anywhere(self):
+        """No shipped channel excludes anything -- except `sesslog-main`
+        (2026-09-03, sidechain-capture unit 6), whose whole definition IS an
+        exclusion: the agents' internal legs and, via `thinking=False`, the
+        thinking kind."""
         from cclogger.models import Config
         for name, ch in Config().routing.channels.items():
+            if name == "sesslog-main":
+                assert ch.options.exclude == {"agent_leg": ["internal"], "kind": ["thinking"]}
+                continue
             assert ch.options.exclude is None, name
 
 

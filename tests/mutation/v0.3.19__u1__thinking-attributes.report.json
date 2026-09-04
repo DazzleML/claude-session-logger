@@ -1,0 +1,124 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u1",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_thinking_attributes.py"
+    ],
+    "timestamp": "2026-09-03T18:19:59-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "fold: None-vs-False -- None returns early (fine) but True now folds the exclude.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "fold: wildcard-preservation guard removed; {kind: true} narrows to [thinking].",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "fold: idempotence dropped; repeated folds duplicate the value.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "fold: existing exclude rules dropped when thinking=false is folded.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "LogEntry.kind default flipped to thinking.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "agent-think label collapses onto AGENT.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "Config.thinking default flipped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "thinking channel collects text instead of thinking.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "per-channel thinking bool inverted at merge.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "fold call removed at merge time.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "global switch cannot be turned off.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "display roles swapped between main thread and agents.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 12
+  },
+  "anomalies": []
+}

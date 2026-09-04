@@ -1,0 +1,125 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\\mut-root-u7",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_agent_id_label.py"
+    ],
+    "timestamp": "2026-09-03T23:04:14-04:00"
+  },
+  "results": [
+    {
+      "id": "N1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: short id sliced from the wrong end -- last 8 chars instead of the first 8, so labels no longer match the id prefix users see.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: default mode for a channel with no options becomes an id mode, so unconfigured channels start emitting ids.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N3",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: the never short-circuit widened to swallow auto-id, killing identity on the whole auto-id mode.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: unnormalizable agent context no longer suppressed, so a label like 'None/a7c41e0b' can render.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N5",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: id membership narrowed to the literal 'id' mode, so auto-id drops the id for typed agents.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N6",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: _tool_label returns None whenever identity is None, so never-mode and auto-repeat tool entries fall back to the baked always string.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N7",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: full-id bracket suffix leaks onto ordinary agent body lines instead of appearing once on the start/stop bracket.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N8",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: full agent id baked into the legacy tool label instead of the 8-char short form (untyped bucket included).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N9",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: sentinel template baked only for non-agent entries, so agent tool entries have no template for the formatter to fill under the id modes.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N10",
+      "file": "hooks/scripts/cclogger/formatters/default.py",
+      "note": "reason: labelled summary template used only when it lacks the snippet marker, i.e. never -- templated tool entries silently keep the always-mode label.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N11",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "note": "reason: id suffix folded in before truncation, so a long bracket line truncates the id away instead of always ending with it.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N12",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "reason: an explicit null override selects an id mode instead of resetting the channel to always.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 9,
+    "survived": 3
+  },
+  "anomalies": []
+}

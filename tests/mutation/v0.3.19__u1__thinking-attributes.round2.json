@@ -1,0 +1,16 @@
+{
+  "_about": "U1 thinking attributes, refinement round (round 1 killed 12/12, which triggers one more fresh generation per the test-mutation skill). N1-N10: fresh-context generator (mode 1, zero tools, source excerpts + the round-1 killed list). Root: an ISOLATED COPY of hooks/ + tests/one-offs/ under the session scratchpad.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_thinking_attributes.py"],
+  "mutations": [
+    {"id": "N1", "file": "hooks/scripts/cclogger/formatters/base.py", "original": "role = getattr(entry, \"role\", None) or \"unknown\"", "mutated": "role = getattr(entry, \"role\", None) or \"ai\"", "note": "display role: missing role falls to ai instead of unknown."},
+    {"id": "N2", "file": "hooks/scripts/cclogger/formatters/base.py", "original": "if role == \"agent\":\n                return \"agent-think\"", "mutated": "if role != \"ai\":\n                return \"agent-think\"", "note": "display role: any non-ai thinking entry becomes agent-think."},
+    {"id": "N3", "file": "hooks/scripts/cclogger/config_merge.py", "original": "elif isinstance(v, str) and v.strip().lower() in (\"true\", \"false\", \"yes\", \"no\", \"1\", \"0\"):", "mutated": "elif isinstance(v, str) and v.strip().lower() in (\"true\", \"false\", \"1\", \"0\"):", "note": "per-channel string form drops yes/no."},
+    {"id": "N4", "file": "hooks/scripts/cclogger/config_merge.py", "original": "v.strip().lower() in (\"true\", \"false\", \"yes\", \"no\", \"1\", \"0\")", "mutated": "v.lower() in (\"true\", \"false\", \"yes\", \"no\", \"1\", \"0\")", "note": "per-channel string form: whitespace no longer stripped."},
+    {"id": "N5", "file": "hooks/scripts/cclogger/config_merge.py", "original": "v.strip().lower() in (\"true\", \"false\", \"yes\", \"no\", \"1\", \"0\")", "mutated": "v.strip() in (\"true\", \"false\", \"yes\", \"no\", \"1\", \"0\")", "note": "per-channel string form: case no longer folded."},
+    {"id": "N6", "file": "hooks/scripts/cclogger/config_merge.py", "original": "if v is None:\n            target.thinking = None", "mutated": "if v is None:\n            target.thinking = False", "note": "per-channel null means disable instead of inherit."},
+    {"id": "N7", "file": "hooks/scripts/cclogger/config_merge.py", "original": "target.thinking = parse_bool(override[\"thinking\"], default=True)", "mutated": "target.thinking = parse_bool(override[\"thinking\"], default=False)", "note": "global switch: unparsable value falls to off instead of on."},
+    {"id": "N8", "file": "hooks/scripts/cclogger/models.py", "original": "file_prefix=\".thinking_\",\n            enabled=False,", "mutated": "file_prefix=\".thinking_\",\n            enabled=True,", "note": "thinking channel ships enabled."},
+    {"id": "N9", "file": "hooks/scripts/cclogger/models.py", "original": "EXCLUDE_RECOGNIZED_KEYS: set[str] = {\"agent_context\", \"kind\", \"agent_leg\"}", "mutated": "EXCLUDE_RECOGNIZED_KEYS: set[str] = {\"agent_context\", \"agent_leg\"}", "note": "kind dropped from the exclude whitelist."},
+    {"id": "N10", "file": "hooks/scripts/cclogger/models.py", "original": "KIND_THINKING = \"thinking\"", "mutated": "KIND_THINKING = \"think\"", "note": "constant value drifts from the literal the helpers compare against."}
+  ]
+}

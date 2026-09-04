@@ -1,0 +1,109 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u5",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_failure_marker_and_brackets.py"
+    ],
+    "timestamp": "2026-09-03T21:31:12-04:00"
+  },
+  "results": [
+    {
+      "id": "N1",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: dict key precedence swapped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: json.dumps fallback -> repr.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N3",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: cap raised tenfold.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: bool guard dropped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N5",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: str() coercion dropped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N6",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "marker: omitted from the plain legacy line.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N7",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "start: prompt wins over description.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "start: 'started' default dropped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "stop: report presence by truthiness (re-anchored; expected equivalent: report is a non-empty tuple or None).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N10",
+      "file": "hooks/scripts/cclogger/formatters/default.py",
+      "note": "default: STOP bracket loses its identity.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 9,
+    "survived": 1
+  },
+  "anomalies": []
+}

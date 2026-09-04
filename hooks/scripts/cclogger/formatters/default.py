@@ -12,10 +12,10 @@ Step 5 makes log_entry() call format_for_channel(), routing here by default.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from cclogger.formatters.base import BaseFormatter
-from cclogger.formatters.legacy import format_datetime
+from cclogger.formatters.legacy import LABEL_SENTINEL, format_datetime
 from cclogger.models import NewlinePolicy
 
 
@@ -52,23 +52,21 @@ class DefaultFormatter(BaseFormatter):
         # the snippet per channel verbosity, then assemble + apply newline
         # policy. This is the path that lets per-channel options actually
         # affect Edit/Write/Skill rich formatting.
-        # #55: does this channel suppress the agent-identity suffix? When it
-        # does, prefer the context-free variants dual-rendered at generation.
-        suppress_agent = bool(
-            getattr(entry, "agent_context", None)
-            and self._agent_identity_for_display(entry) is None
-        )
+        # #55 / unit 7: the label an in-agent tool entry gets HERE (plain, or
+        # the id forms) when it differs from the `always` rendering baked at
+        # generation; None means the baked strings already say it.
+        label = self._tool_label(entry)
 
         if entry.summary and "{snippet}" in entry.summary:
-            return self._format_template_entry(entry, suppress_agent=suppress_agent)
+            return self._format_template_entry(entry, label=label)
 
         # No template: precomputed legacy_complete (Bash, Read, Grep, ...)
         # has the full byte-identical legacy string. Use it directly.
         legacy_complete = entry.metadata.get("_legacy_complete")
-        if suppress_agent:
-            plain = entry.metadata.get("_legacy_complete_plain")
-            if isinstance(plain, str):
-                legacy_complete = plain
+        if label is not None:
+            template = entry.metadata.get("_legacy_complete_t")
+            if isinstance(template, str):
+                legacy_complete = template.replace(LABEL_SENTINEL, label)
         if isinstance(legacy_complete, str):
             return legacy_complete
 
@@ -77,12 +75,14 @@ class DefaultFormatter(BaseFormatter):
         return self._format_log_entry(entry)
 
     def _format_template_entry(self, entry: "LogEntry",
-                               suppress_agent: bool = False) -> str:
+                               label: Optional[str] = None) -> str:
         """Substitute `{snippet}` in entry.summary per channel verbosity.
 
         Output: `[[<datetime>]] {<substituted-summary> }<pwd_part>`
         Byte-identical to _legacy_complete when channel has no options
         (snippet truncated + escaped to match legacy truncate_preview).
+        `label`, when given, is this channel's form of an in-agent tool
+        label, filled into the sentinel template baked beside the summary.
         """
         from cclogger.formatters.legacy import format_datetime
 
@@ -100,10 +100,10 @@ class DefaultFormatter(BaseFormatter):
             entry.raw_content or "", max_chars, newline_policy
         )
         template = entry.summary
-        if suppress_agent:
-            plain = entry.metadata.get("summary_plain")
-            if isinstance(plain, str) and "{snippet}" in plain:
-                template = plain
+        if label is not None:
+            labelled = entry.metadata.get("summary_t")
+            if isinstance(labelled, str) and "{snippet}" in labelled:
+                template = labelled.replace(LABEL_SENTINEL, label)
         body = template.replace("{snippet}", snippet)
 
         # Use pre-computed datetime + pwd from generate_entry metadata
@@ -139,17 +139,20 @@ class DefaultFormatter(BaseFormatter):
         # Resolve channel options
         max_chars = self._resolve_max_chars(role, tool_name)
         newline_policy = self._resolve_newlines(role, tool_name)
-        label = self._resolve_role_label(role)
+        # Thinking entries display under think / agent-think (2026-09-03);
+        # verbosity and newlines above still resolve on the entry's own role.
+        label = self._resolve_role_label(self._display_role(entry))
 
         # #50: agent-role entries carry the agent's identity in the label
         # (`{AGENT:explore ...}`), mode-gated per ChannelOptions.agent_label.
-        if role == "agent":
+        if role in ("agent", "agent-start", "agent-stop"):
             identity = self._agent_identity_for_display(entry)
             if identity:
                 label = f"{label}:{identity}"
 
-        # Determine body content
-        body = self._build_body(entry, max_chars)
+        # Determine body content (+ the full agent id once, on the bracket
+        # lines, under the id label modes -- unit 7)
+        body = self._build_body(entry, max_chars) + self._agent_id_suffix(entry)
 
         # Datetime prefix
         datetime_mode = "full"

@@ -1,15 +1,22 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "MINIMAL preset: only the curated shell history channel. For users who want a copy-pasteable shell log and nothing else.",
+  "_comment": "MINIMAL preset: only the curated shell history channel. For users who want a copy-pasteable shell log and nothing else. Every other shipped channel is named and switched off, so the promise holds when new channels arrive -- an unnamed channel would keep its own default and start writing a file.",
+
+  "thinking": false,
 
   "routing": {
     "channels": {
-      "shell":    {"file_prefix": ".shell_",    "enabled": true},
-      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": false},
-      "tasks":    {"file_prefix": ".tasks_",    "enabled": false},
-      "tools":    {"file_prefix": ".tools_",    "enabled": false},
-      "convo":    {"file_prefix": ".convo_",    "enabled": false},
-      "unknowns": {"file_prefix": ".unknowns_", "enabled": false}
+      "shell":        {"file_prefix": ".shell_",        "enabled": true},
+      "sesslog":      {"file_prefix": ".sesslog_",      "enabled": false},
+      "sesslog-main": {"file_prefix": ".sesslog-main_", "enabled": false},
+      "tasks":        {"file_prefix": ".tasks_",        "enabled": false},
+      "tools":        {"file_prefix": ".tools_",        "enabled": false},
+      "convo":        {"file_prefix": ".convo_",        "enabled": false},
+      "agents":       {"file_prefix": ".agents_",       "enabled": false},
+      "unknowns":     {"file_prefix": ".unknowns_",     "enabled": false},
+      "fileio":       {"file_prefix": ".fileio_",       "enabled": false},
+      "tools-output": {"file_prefix": ".tools-output_", "enabled": false},
+      "thinking":     {"file_prefix": ".thinking_",     "enabled": false}
     }
   }
 }

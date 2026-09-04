@@ -1,0 +1,124 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u2",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_sidechain_reader.py"
+    ],
+    "timestamp": "2026-09-03T18:51:34-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: cursor at EOF treated as shrink -> re-read from the top.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: cursor never advances.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: assistant entries skipped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: and -> or on the thinking filter.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: wrong key for thinking blocks.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: blank text blocks kept.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "timestamp: UTC wall time instead of local.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: no payload message -> no report promoted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: report also emitted as internal.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: first text taken as the report candidate.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: internal legs tagged report.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "legs: dispatch and internal swapped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 12
+  },
+  "anomalies": []
+}

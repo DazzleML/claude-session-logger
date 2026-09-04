@@ -99,8 +99,10 @@ def _base(transcript: Path) -> dict:
 
 
 def _untyped_stop(base: dict, i: int, home: Path) -> dict:
+    # 17 hex with the real ids' constant leading `a`; the counter sits in the
+    # first 8 characters because that is all a label shows (unit 7, 2026-09-03)
     return dict(base, hook_event_name="SubagentStop",
-                agent_id=f"a{i:016x}", agent_type="",
+                agent_id=f"a{i:07x}000000000", agent_type="",
                 stop_hook_active=False,
                 agent_transcript_path=str(home / "never-written.jsonl"),
                 last_assistant_message=f"UNTYPED-MSG-{i:03d} verifying step {i}")
@@ -136,7 +138,7 @@ def driven_home(tmp_path):
     # observed ids ever made one -- but the legacy pass-through must carry
     # classifier and id the right way round; mutation M12 hid here)
     events.append(dict(base, hook_event_name="PostToolUse", tool_name="Bash",
-                       agent_id="a00000000000f00d", agent_type="",
+                       agent_id="af00d000000000000", agent_type="",
                        tool_input={"command": "echo UNTYPED-TOOL-CALL"},
                        tool_response={"stdout": "", "stderr": "", "interrupted": False}))
     events.append(dict(base, hook_event_name="PostToolUse", tool_name="Bash",
@@ -164,9 +166,12 @@ class TestEndToEndBucketing:
         assert len(feed) == 1, [p.name for p in d.iterdir()]
         text = _read(feed[0])
         assert text.count("UNTYPED-MSG-") == 50
-        # every line attributed to its instance: AGENT:untyped/<id>
-        ids = re.findall(r"AGENT:untyped/(a[0-9a-f]{16})", text)
+        # every line attributed to its instance: AGENT:untyped/<id> -- the
+        # id in its 8-character label form (unit 7, 2026-09-03), never the
+        # full 17
+        ids = re.findall(r"AGENT:untyped/(a[0-9a-f]{7})(?![0-9a-f])", text)
         assert len(ids) == 50 and len(set(ids)) == 50
+        assert not re.search(r"untyped/a[0-9a-f]{16}", text)
         assert "CONTROL-NO-AGENT-ID" not in text
         assert "TYPED-REPORT-MARKER" not in text
 
@@ -176,7 +181,7 @@ class TestEndToEndBucketing:
         typed one lands in .agents-explore_* with the classic `Bash|Explore`."""
         d = _session_dir(driven_home)
         feed = _read(next(iter(d.glob(".agents-untyped_*"))))
-        assert "{Bash|untyped/a00000000000f00d: echo UNTYPED-TOOL-CALL" in feed
+        assert "{Bash|untyped/af00d000: echo UNTYPED-TOOL-CALL" in feed  # 8-char label form
         assert "echo TYPED-TOOL-CALL" not in feed  # ("TYPED-" is a substring of "UNTYPED-")
         typed = _read(next(iter(d.glob(".agents-explore_*"))))
         assert "{Bash|Explore: echo TYPED-TOOL-CALL" in typed
@@ -221,6 +226,7 @@ class TestEndToEndBucketing:
 
 class TestUntypedLabel:
     ID = "a000e885b41c764eb"
+    SHORT = ID[:8]  # the label form (unit 7, 2026-09-03): labels never show the full id
 
     def _fmt(self, channel_name, opts, entry):
         from cclogger.formatters import format_for_channel
@@ -238,12 +244,12 @@ class TestUntypedLabel:
         from cclogger.models import ChannelOptions
         out = self._fmt("convo", ChannelOptions(formatter="chat", agent_label="always"),
                         self._report())
-        assert f"AGENT:untyped/{self.ID}" in out
+        assert f"AGENT:untyped/{self.SHORT}" in out and self.ID not in out
 
     def test_default_channel_shows_class_and_id(self):
         from cclogger.models import ChannelOptions
         out = self._fmt("sesslog", ChannelOptions(agent_label="always"), self._report())
-        assert f"{{AGENT:untyped/{self.ID}:" in out
+        assert f"{{AGENT:untyped/{self.SHORT}:" in out and self.ID not in out
 
     def test_auto_in_untyped_feed_keeps_only_the_id(self):
         # The filename already says "untyped"; the id is the only attribution
@@ -253,14 +259,14 @@ class TestUntypedLabel:
         out = self._fmt("agents-untyped",
                         ChannelOptions(formatter="chat", agent_label="auto"),
                         self._report())
-        assert f"AGENT:{self.ID}" in out
+        assert f"AGENT:{self.SHORT}" in out
         assert "untyped/" not in out
 
     def test_never_drops_identity(self):
         from cclogger.models import ChannelOptions
         out = self._fmt("convo", ChannelOptions(formatter="chat", agent_label="never"),
                         self._report())
-        assert "AGENT" in out and self.ID not in out and "untyped" not in out
+        assert "AGENT" in out and self.SHORT not in out and "untyped" not in out
 
     def test_untyped_without_id_is_still_bucketed(self):
         from cclogger.models import ChannelOptions

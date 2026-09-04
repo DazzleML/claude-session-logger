@@ -289,14 +289,14 @@ class TestRoutingConfigApplyOverride:
     def test_category_routes_per_key_replace(self):
         target = RoutingConfig()
         # Sanity: shipped meta route
-        assert target.category_routes["meta"] == ["sesslog", "agents"]
+        assert target.category_routes["meta"] == ["sesslog", "sesslog-main", "agents"]
         apply_override_routing_config(
             target,
             {"category_routes": {"meta": ["sesslog"]}},
         )
         assert target.category_routes["meta"] == ["sesslog"]
         # Other categories preserved
-        assert target.category_routes["task"] == ["shell", "sesslog", "tools", "tasks"]
+        assert target.category_routes["task"] == ["shell", "sesslog", "sesslog-main", "tools", "tasks"]
 
     def test_legacy_subtype_routing_key_silently_ignored(self):
         """v0.3.7-pre (supersedes #48): subtype splitting moved from

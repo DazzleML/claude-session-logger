@@ -127,10 +127,12 @@ class TestDefaultChannels:
         # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
         # v0.3.7 Phase 5 (#40): agents channel added for sub-agent invocations
         # v0.3.7-pre #87 P2a: tools-output channel added (disabled by default)
+        # 2026-09-03 (sidechain-capture unit 1): thinking channel added (disabled by default)
+        # 2026-09-03 (sidechain-capture unit 6): sesslog-main channel added (enabled by default)
         channels = _default_channels()
         assert set(channels.keys()) == {
             "shell", "sesslog", "tasks", "unknowns", "tools", "convo",
-            "fileio", "agents", "tools-output",
+            "fileio", "agents", "tools-output", "thinking", "sesslog-main",
         }
 
 
@@ -140,7 +142,7 @@ class TestDefaultCategoryRoutes:
     def test_unknown_route_in_defaults(self):
         routes = _default_category_routes()
         assert "unknown" in routes
-        assert routes["unknown"] == ["sesslog", "unknowns"]
+        assert routes["unknown"] == ["sesslog", "sesslog-main", "unknowns"]
 
     def test_unknown_route_does_not_include_shell(self):
         # Critical: keeps .shell_*.log clean of non-shell entries
@@ -150,8 +152,8 @@ class TestDefaultCategoryRoutes:
     def test_existing_routes_still_present(self):
         # Updated for v0.3.0 (#28): _default and task routes now include `tools`
         routes = _default_category_routes()
-        assert routes["_default"] == ["shell", "sesslog", "tools"]
-        assert routes["task"] == ["shell", "sesslog", "tools", "tasks"]
+        assert routes["_default"] == ["shell", "sesslog", "sesslog-main", "tools"]
+        assert routes["task"] == ["shell", "sesslog", "sesslog-main", "tools", "tasks"]
 
 
 class TestMarkerPrefix:

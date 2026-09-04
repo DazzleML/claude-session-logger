@@ -1,0 +1,52 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\\mut-root-u7",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_agent_id_label.py"
+    ],
+    "timestamp": "2026-09-03T23:09:44-04:00"
+  },
+  "results": [
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: default mode for a channel with no options becomes an id mode, so unconfigured channels start emitting ids.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: unnormalizable agent context no longer suppressed, so a label like 'None/a7c41e0b' can render.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N11",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "note": "reason: id suffix folded in before truncation, so a long bracket line truncates the id away instead of always ending with it.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 3
+  },
+  "anomalies": []
+}

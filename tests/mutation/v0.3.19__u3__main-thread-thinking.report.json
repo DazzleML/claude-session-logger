@@ -1,0 +1,109 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u3",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_main_thread_thinking.py"
+    ],
+    "timestamp": "2026-09-03T20:38:08-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: nothing-new short-circuit >= -> > (opens the file at EOF).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: shrink reset removed.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: only user entries skipped.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: include_thinking inverted.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: cursor never advances.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "reader: cursor only advances when blocks were found.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "text-only view leaks thinking.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "Stop: thinking logged as text.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "Stop: global switch ignored.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "Stop: debug tally swapped (observability only).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "survived": 5,
+    "killed": 5
+  },
+  "anomalies": []
+}

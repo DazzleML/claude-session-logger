@@ -207,7 +207,7 @@ def main() -> None:
     # Conversation events (sub-issues #33-#35): UserPromptSubmit, Stop,
     # SubagentStop -- capture user/AI/agent prose to the convo channel
     # before the non-tool early-exit below.
-    if hook_event_name in ("UserPromptSubmit", "Stop", "SubagentStop"):
+    if hook_event_name in ("UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop"):
         try:
             handle_conversation_event(
                 hook_event_name=hook_event_name,

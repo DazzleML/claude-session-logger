@@ -1,5 +1,6 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
+  "_comment": "DEFAULTS, written out. This file changes nothing -- it names every channel the plugin ships with the state it ships in, so you can see the whole surface in one place and flip a value. The four marked 'opt-in' below are defined but disabled; set enabled to true to turn one on.",
 
   "performance": {
     "max_file_size_for_line_search": 2097152,
@@ -13,20 +14,24 @@
     "pwd": false
   },
 
+  "thinking": true,
+
   "routing": {
     "channels": {
-      "shell": {"file_prefix": ".shell_", "enabled": true},
-      "sesslog": {"file_prefix": ".sesslog_", "enabled": true},
-      "tasks": {"file_prefix": ".tasks_", "enabled": true},
-      "unknowns": {"file_prefix": ".unknowns_", "enabled": true},
-      "tools": {"file_prefix": ".tools_", "enabled": true}
+      "shell":        {"file_prefix": ".shell_",        "enabled": true},
+      "sesslog":      {"file_prefix": ".sesslog_",      "enabled": true},
+      "sesslog-main": {"file_prefix": ".sesslog-main_", "enabled": true},
+      "tools":        {"file_prefix": ".tools_",        "enabled": true},
+      "tasks":        {"file_prefix": ".tasks_",        "enabled": true},
+      "convo":        {"file_prefix": ".convo_",        "enabled": true},
+      "agents":       {"file_prefix": ".agents_",       "enabled": true},
+      "unknowns":     {"file_prefix": ".unknowns_",     "enabled": true},
+
+      "fileio":       {"file_prefix": ".fileio_",       "enabled": false},
+      "tools-output": {"file_prefix": ".tools-output_", "enabled": false},
+      "thinking":     {"file_prefix": ".thinking_",     "enabled": false}
     },
-    "category_routes": {
-      "_default": ["shell", "sesslog", "tools"],
-      "task": ["shell", "sesslog", "tools", "tasks"],
-      "mcp": ["shell", "sesslog", "tools"],
-      "unknown": ["sesslog", "unknowns"]
-    },
+    "category_routes": {},
     "tool_overrides": {}
   },
 

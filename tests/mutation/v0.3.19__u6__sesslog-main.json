@@ -1,0 +1,90 @@
+{
+  "_about": "U6 sesslog-main: the shipped main-thread channel definition and its routes (frame f1.6 of the sidechain-capture-release gauntlet, 2026-09-03). M1-Mn: fresh-context generator (mode 1, zero tools, source excerpts only). Root: an ISOLATED COPY of hooks/ + tests/ under the session scratchpad.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_sesslog_main.py"],
+  "mutations": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "                exclude={\"agent_leg\": [AGENT_LEG_INTERNAL]},",
+      "mutated": "                exclude={\"agent_type\": [AGENT_LEG_INTERNAL]},",
+      "note": "reason: exclude keyed on the wrong dimension (agent_type instead of agent_leg), so internal legs are no longer filtered out of sesslog-main"
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "                exclude={\"agent_leg\": [AGENT_LEG_INTERNAL]},",
+      "mutated": "                exclude={\"agent_leg\": [\"main\"]},",
+      "note": "reason: exclude value inverted -- the channel drops the main leg and keeps every agent's internal legs, the exact opposite of the intent"
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "                exclude={\"agent_leg\": [AGENT_LEG_INTERNAL]},\n                thinking=False,",
+      "mutated": "                thinking=False,",
+      "note": "reason: exclude clause dropped entirely, so sesslog-main becomes a thinking-free duplicate of sesslog with no leg filtering"
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "                thinking=False,",
+      "mutated": "                thinking=True,",
+      "note": "reason: thinking re-enabled, so the post-init no longer folds exclude[\"kind\"] = [\"thinking\"] and thinking blocks leak into the main channel"
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "                exclude={\"agent_leg\": [AGENT_LEG_INTERNAL]},\n                thinking=False,",
+      "mutated": "                exclude={\"agent_leg\": [AGENT_LEG_INTERNAL]},",
+      "note": "reason: thinking=False line dropped (merge/edit loss), leaving the channel on the default thinking setting instead of off"
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "            file_prefix=\".sesslog-main_\",",
+      "mutated": "            file_prefix=\".sesslog-main_\",\n            enabled=False,",
+      "note": "reason: shipped default channel disabled, so sesslog-main is defined and routed but never writes a file"
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "            file_prefix=\".sesslog-main_\",",
+      "mutated": "            file_prefix=\".sesslog_\",",
+      "note": "reason: copy-paste prefix regression -- sesslog-main writes to the sesslog file prefix, colliding with the sesslog channel's own log"
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "            file_prefix=\".sesslog-main_\",\n            options=ChannelOptions(\n                verbosity={\n                    \"_default\": \"full\",\n                    \"write\": {\"max_chars\": 20},",
+      "mutated": "            file_prefix=\".sesslog-main_\",\n            options=ChannelOptions(\n                verbosity={\n                    \"_default\": \"full\",\n                    \"write\": {\"max_chars\": 200},",
+      "note": "reason: verbosity drifts from sesslog -- the write hint becomes max_chars 200, so the two channels no longer mirror each other per role"
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "        \"message_user\": [\"sesslog\", \"sesslog-main\", \"convo\"],",
+      "mutated": "        \"message_user\": [\"sesslog\", \"convo\"],",
+      "note": "reason: sesslog-main dropped from a conversational route, so user messages are missing from the main-thread log"
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "        \"_default\": [\"shell\", \"sesslog\", \"sesslog-main\", \"tools\"],",
+      "mutated": "        \"_default\": [\"shell\", \"sesslog-main\", \"sesslog\", \"tools\"],",
+      "note": "reason: route order regression -- sesslog-main is named BEFORE sesslog, violating the immediately-after ordering rule"
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "        \"meta\": [\"sesslog\", \"sesslog-main\", \"agents\"],",
+      "mutated": "        \"meta\": [\"sesslog-main\", \"agents\"],",
+      "note": "reason: sesslog replaced by sesslog-main on the meta route, producing a route that names sesslog-main without sesslog"
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "        \"TaskOutput\": [\"sesslog\", \"sesslog-main\", \"tools\", \"tools-output\"],",
+      "mutated": "        \"TaskOutput\": [\"sesslog\", \"tools\", \"tools-output\"],",
+      "note": "reason: tool override missing sesslog-main, so TaskOutput lines reach sesslog but never the main-thread channel"
+    }
+  ]
+}

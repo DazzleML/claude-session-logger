@@ -1,0 +1,108 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u1",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_thinking_attributes.py"
+    ],
+    "timestamp": "2026-09-03T18:25:59-04:00"
+  },
+  "results": [
+    {
+      "id": "N1",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "display role: missing role falls to ai instead of unknown.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "display role: any non-ai thinking entry becomes agent-think.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N3",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "per-channel string form drops yes/no.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "per-channel string form: whitespace no longer stripped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N5",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "per-channel string form: case no longer folded.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N6",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "per-channel null means disable instead of inherit.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N7",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "global switch: unparsable value falls to off instead of on.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N8",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "thinking channel ships enabled.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N9",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "kind dropped from the exclude whitelist.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N10",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "constant value drifts from the literal the helpers compare against.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 10
+  },
+  "anomalies": []
+}

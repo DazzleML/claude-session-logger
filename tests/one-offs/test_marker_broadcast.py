@@ -166,10 +166,17 @@ class TestSubtypeDerivedChannelsExcluded:
 
         logger = _instantiate(config, session, event_time)
 
-        # The derived path `.bash-powershell_*` should NOT exist (no marker file)
+        # The derived path `.shell-bash_*` should NOT be a target. A derived
+        # path is one whose prefix is not a declared channel's file_prefix --
+        # NOT "any prefix with a hyphen": `.sesslog-main_` and `.tools-output_`
+        # are declared top-level channels (2026-09-03, sidechain-capture unit
+        # 6 made the first of them a shipped default) and belong in the
+        # broadcast like any other.
+        declared = {ch.file_prefix.rstrip("_") for ch in config.routing.channels.values()}
         target_paths = logger._collect_marker_target_paths()
+        assert target_paths, "broadcast should have at least the enabled defaults"
         for path in target_paths:
-            assert "-" not in path.name.split("_")[0], (
+            assert path.name.split("_")[0] in declared, (
                 f"Subtype-derived path slipped into broadcast: {path}"
             )
 

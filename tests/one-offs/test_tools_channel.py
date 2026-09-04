@@ -34,10 +34,12 @@ class TestToolsChannelDefaults:
         # v0.3.7 Phase 2+3 (#38): fileio channel added (disabled by default)
         # v0.3.7 Phase 5 (#40): agents channel added for sub-agent invocations
         # v0.3.7-pre #87 P2a: tools-output channel added (disabled by default)
+        # 2026-09-03 (sidechain-capture unit 1): thinking channel added (disabled by default)
+        # 2026-09-03 (sidechain-capture unit 6): sesslog-main channel added (enabled by default)
         channels = _default_channels()
         assert set(channels.keys()) == {
             "shell", "sesslog", "tasks", "unknowns", "tools", "convo",
-            "fileio", "agents", "tools-output",
+            "fileio", "agents", "tools-output", "thinking", "sesslog-main",
         }
 
     def test_tools_channel_uses_consistent_prefix_pattern(self):
@@ -54,18 +56,18 @@ class TestToolsRouting:
     def test_default_route_includes_tools(self):
         routes = _default_category_routes()
         assert "tools" in routes["_default"]
-        assert routes["_default"] == ["shell", "sesslog", "tools"]
+        assert routes["_default"] == ["shell", "sesslog", "sesslog-main", "tools"]
 
     def test_task_route_includes_tools(self):
         routes = _default_category_routes()
         assert "tools" in routes["task"]
-        assert routes["task"] == ["shell", "sesslog", "tools", "tasks"]
+        assert routes["task"] == ["shell", "sesslog", "sesslog-main", "tools", "tasks"]
 
     def test_unknown_route_does_NOT_include_tools(self):
         # Critical: unknown stays focused on discovery, doesn't pollute tools
         routes = _default_category_routes()
         assert "tools" not in routes["unknown"]
-        assert routes["unknown"] == ["sesslog", "unknowns"]
+        assert routes["unknown"] == ["sesslog", "sesslog-main", "unknowns"]
 
     def test_unknown_route_does_NOT_include_shell(self):
         # Regression check from v0.2.1
@@ -124,7 +126,7 @@ class TestRoutingResolution:
     def test_task_tool_routes_to_all_four_channels(self):
         # task category routes explicitly to shell + sesslog + tools + tasks
         routes = _default_category_routes()
-        assert routes["task"] == ["shell", "sesslog", "tools", "tasks"]
+        assert routes["task"] == ["shell", "sesslog", "sesslog-main", "tools", "tasks"]
 
     def test_unknown_tool_does_not_reach_tools(self):
         # Unknown tools stay out of the tools investigation view

@@ -1,0 +1,22 @@
+{
+  "_about": "U7 agent-id label mode: the id label forms, the bracket full-id suffix, the label template that replaced the plain dual-render (frame f1.7 of the sidechain-capture-release gauntlet, 2026-09-03). M1-Mn: fresh-context generator (mode 1, zero tools, source excerpts only). Root: an ISOLATED COPY of hooks/ + tests/one-offs/ under the session scratchpad. Round 1b: M11 re-run after test_failure_marker_survives_on_the_template_path_too was written for it.",
+  "test_command": [
+    "python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests/one-offs/test_agent_id_label.py"
+  ],
+  "mutations": [
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "original": "    if marker:\n        if summary is not None:\n            summary = f\"{summary}{marker}\"\n        if summary_t is not None:\n            summary_t = f\"{summary_t}{marker}\"",
+      "mutated": "    if marker:\n        if summary is not None:\n            summary = f\"{summary}{marker}\"",
+      "note": "reason: the labelled summary template loses the trailing marker -- id-mode template entries drop the marker that the always-mode summary still carries, so the two renderings diverge."
+    }
+  ]
+}

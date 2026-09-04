@@ -48,18 +48,22 @@ class ChatFormatter(BaseFormatter):
 
         max_chars = self._resolve_max_chars(role, tool_name)
         newline_policy = self._resolve_newlines(role, tool_name)
-        label = self._resolve_role_label(role)
+        # Thinking entries display under think / agent-think (2026-09-03);
+        # verbosity and newlines above still resolve on the entry's own role.
+        label = self._resolve_role_label(self._display_role(entry))
 
         # #50: per-line agent identity for subagent dialogue -- `AGENT:explore`
         # instead of bare AGENT, so multi-agent conversations read attributed.
         # Mode-gated per ChannelOptions.agent_label (#55); identity uses the
         # normalized form so labels match per-agent file naming.
-        if role == "agent":
+        if role in ("agent", "agent-start", "agent-stop"):
             identity = self._agent_identity_for_display(entry)
             if identity:
                 label = f"{label}:{identity}"
 
-        body = self._truncate(entry.raw_content or "", max_chars)
+        # (+ the full agent id once, on the bracket lines, under the id label
+        # modes -- unit 7)
+        body = self._truncate(entry.raw_content or "", max_chars) + self._agent_id_suffix(entry)
 
         datetime_mode = "full"
         if self.config is not None:

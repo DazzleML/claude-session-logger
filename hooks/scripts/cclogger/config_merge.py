@@ -152,8 +152,9 @@ def apply_override_channel_options(
             target.subtype_split = False
 
     if "agent_label" in override:
+        from cclogger.models import AGENT_LABEL_MODES
         v = override["agent_label"]
-        if v in ("always", "auto", "never"):
+        if v in AGENT_LABEL_MODES:
             target.agent_label = v
         elif v is None:
             target.agent_label = "always"
@@ -199,6 +200,23 @@ def apply_override_channel_options(
                     cleaned_ex[key] = [item for item in val if isinstance(item, str)]
                 # False / other shapes -> no predicate for this key
             target.exclude = cleaned_ex or None
+
+    if "thinking" in override:
+        # Readable sugar over exclude {"kind": ["thinking"]} (2026-09-03):
+        # false = this channel never receives thinking entries; true/None =
+        # inherit. Folded into exclude here so the evaluator stays generic.
+        v = override["thinking"]
+        if v is None:
+            target.thinking = None
+        elif isinstance(v, bool):
+            target.thinking = v
+        elif isinstance(v, str) and v.strip().lower() in ("true", "false", "yes", "no", "1", "0"):
+            # parse on the normalized form: parse_bool does not strip, so
+            # " YES " would otherwise pass the guard and parse as False
+            target.thinking = v.strip().lower() in ("true", "yes", "1")
+        # other shapes ignored (keep current)
+        from cclogger.models import fold_thinking_into_exclude
+        fold_thinking_into_exclude(target)
 
 
 def apply_override_channel_config(
@@ -371,6 +389,11 @@ def apply_override_config(target: Config, override: Any) -> None:
         if isinstance(overrides_dict, dict):
             for tool, val in overrides_dict.items():
                 target.action_only_overrides[tool] = str(val)
+
+    # Thinking capture, the global switch (2026-09-03): `"thinking": false`
+    # at the top level stops extracting thinking blocks anywhere.
+    if "thinking" in override:
+        target.thinking = parse_bool(override["thinking"], default=True)
 
     failure = override.get("failure_capture")
     if isinstance(failure, dict):

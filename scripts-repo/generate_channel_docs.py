@@ -204,6 +204,44 @@ def generate_markdown() -> str:
         lines.append(f"| `{cat}` | {doc} |")
     lines.append("")
 
+    lines.append("## What Claude Code produces, and where we put it")
+    lines.append("")
+    lines.append(
+        "The tables above map Claude Code's **tool names** to our categories "
+        "and channels. That is only part of what a session produces: it also "
+        "emits hook events we may or may not subscribe to, transcript content "
+        "blocks of more than one kind, and a separate transcript per subagent. "
+        "This table names the whole surface, so an unrecorded source is a "
+        "visible empty cell rather than a surprise."
+    )
+    lines.append("")
+    lines.append("| Claude Code produces | Where it lives | We receive it via | We record it as |")
+    lines.append("|---|---|---|---|")
+    lines.append("| Tool call, main thread | `PostToolUse` payload | subscribed | `{Tool: ...}`, by category |")
+    lines.append("| Tool call inside a subagent | `PostToolUse` payload with `agent_id` | subscribed | the same entry, attributed (`{Bash\\|explore: ...}`) and collected into that agent's file |")
+    lines.append("| Failed tool call | `PostToolUseFailure` payload | subscribed | the same entry plus `[FAILED: reason]` inside the frame |")
+    lines.append("| Main-thread narration | main transcript, `text` blocks | `Stop` + a byte cursor | `{AI: ...}` |")
+    lines.append("| Main-thread reasoning | main transcript, `thinking` blocks | `Stop` + the same cursor | `{THINK: ...}` (switchable per channel; off in `sesslog-main`) |")
+    lines.append("| Agent dispatch | `PostToolUse` for the Agent tool | subscribed | `{Agent: prompt}` |")
+    lines.append("| Agent kickoff | `SubagentStart` payload | subscribed | `{AGENT-START:<type>: description }` |")
+    lines.append("| Agent narration | that agent's sidechain transcript | `SubagentStop` + a per-agent cursor | `{AGENT:<type>: ...}` |")
+    lines.append("| Agent reasoning | that agent's sidechain transcript | the same read | `{AGENT-THINK:<type>: ...}` |")
+    lines.append("| Agent report | `last_assistant_message`, cross-checked against the transcript's last text block | subscribed | `{AGENT:<type>: ...}`, the final one |")
+    lines.append("| Agent end | `SubagentStop` | subscribed | `{AGENT-STOP:<type>: stopped (N narration, M thinking, report) }` |")
+    lines.append("| Typeless side-query | `SubagentStop` with an empty type | subscribed | one line in `.agents-untyped_*`, labelled with the agent's id (nothing else for these exists on disk) |")
+    lines.append("| User prompt | `UserPromptSubmit` payload | subscribed | `{USER: ...}` |")
+    lines.append("| Tool output text | `tool_response` | subscribed | rendered for the tools that carry a useful one; a general treatment is open work |")
+    lines.append("| Attachments, images, system entries | transcripts | not read | nothing -- deliberately out of scope |")
+    lines.append("")
+    lines.append(
+        "Two attributes travel with every entry and are what the channel "
+        "predicates key on: its **kind** (`text` or `thinking`) and, for agent "
+        "traffic, its **leg** (`dispatch`, `internal`, or `report`). "
+        "`sesslog-main` is defined entirely in those terms -- everything except "
+        "the internal leg and thinking."
+    )
+    lines.append("")
+
     lines.append("## Entry framing: the braces always match")
     lines.append("")
     lines.append(

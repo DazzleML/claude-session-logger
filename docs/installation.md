@@ -270,6 +270,21 @@ If `claude plugin install` fails with "Plugin not found":
 3. Check `~/.claude/logs/hook-debug.log` for errors
 4. Ensure plugin is enabled: `claude plugin list` should show `✔ enabled`
 
+### Logging feels slow
+
+Every hook invocation times itself. When one takes longer than a second it writes a single `SLOW` line to `~/.claude/logs/session-logger-perf.log` with the elapsed time, the phase breakdown and the number of files written, so a stall leaves evidence instead of a guess:
+
+```bash
+# Linux/macOS
+cat ~/.claude/logs/session-logger-perf.log
+```
+```powershell
+# Windows PowerShell
+Get-Content "$env:USERPROFILE\.claude\logs\session-logger-perf.log"
+```
+
+An empty or missing file means nothing crossed the threshold. A single entry at the end of a long subagent run is normal — that is the run's transcript being read once. A steady stream of them is worth reporting as an issue. To watch at a finer grain, lower the threshold for one session with `SESSION_LOGGER_SLOW_HOOK_SECONDS=0.2`.
+
 ### Hooks fail with path errors (npm-installed Claude Code)
 
 If hooks fail with errors like `/hooks/scripts/run-hook.mjs: not found` or similar path issues, you may be running the **npm-installed version** of Claude Code, which does not expand `${CLAUDE_PLUGIN_ROOT}` in plugin hook commands.

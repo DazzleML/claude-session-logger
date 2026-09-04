@@ -1,0 +1,104 @@
+{
+  "_about": "U7 agent-id label mode: the id label forms, the bracket full-id suffix, the label template that replaced the plain dual-render (frame f1.7 of the sidechain-capture-release gauntlet, 2026-09-03). M1-Mn: fresh-context generator (mode 1, zero tools, source excerpts only). Root: an ISOLATED COPY of hooks/ + tests/one-offs/ under the session scratchpad.",
+  "test_command": ["python", "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/one-offs/test_agent_id_label.py"],
+  "mutations": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "AGENT_ID_LABEL_CHARS = 8",
+      "mutated": "AGENT_ID_LABEL_CHARS = 6",
+      "note": "reason: label width silently narrowed -- ids render as `explore/a7c41e` instead of the 8-char `explore/a7c41e0b`, so any test asserting the exact short form must fail."
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "original": "    if not agent_id:\n        return None\n    return str(agent_id)[:AGENT_ID_LABEL_CHARS]",
+      "mutated": "    return str(agent_id)[:AGENT_ID_LABEL_CHARS]",
+      "note": "reason: None/empty guard dropped -- short_agent_id(None) returns the string 'None', so an entry with no agent id renders `explore/None` instead of plain `explore`."
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        with_id = mode in AGENT_LABEL_ID_MODES or norm == UNTYPED_AGENT_CLASSIFIER",
+      "mutated": "        with_id = mode in AGENT_LABEL_ID_MODES",
+      "note": "reason: untyped clause dropped -- the untyped bucket loses its short id under always/auto, collapsing every unnamed agent back into one indistinguishable `untyped` label."
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        repeats_filename = (\n            mode in AGENT_LABEL_AUTO_MODES and self.channel_name.endswith(f\"-{norm}\")\n        )",
+      "mutated": "        repeats_filename = (\n            mode == \"auto\" and self.channel_name.endswith(f\"-{norm}\")\n        )",
+      "note": "reason: auto-id no longer counts as an auto mode -- inside the agent's own file (agents-explore) the type stops being dropped, so labels read `explore/a7c41e0b` where they should read bare `a7c41e0b`."
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        if short:\n            return short if repeats_filename else f\"{norm}/{short}\"",
+      "mutated": "        if short:\n            return f\"{norm}/{short}\" if repeats_filename else short",
+      "note": "reason: the two id label forms are swapped -- the agent's own file gets `explore/a7c41e0b` and every other channel gets a bare `a7c41e0b` with no type at all."
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        identity = self._agent_identity_for_display(entry)\n        if identity is not None and self._agent_label_mode() in (\"always\", \"auto\"):\n            return None\n        return f\"{base}|{identity}\" if identity else base",
+      "mutated": "        identity = self._agent_identity_for_display(entry)\n        if identity is not None:\n            return None\n        return f\"{base}|{identity}\" if identity else base",
+      "note": "reason: _tool_label bails out for the id modes too -- tool lines fall back to the baked `always` string, so `Bash|explore/a7c41e0b` regresses to `Bash|explore` under id/auto-id."
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        agent_id = getattr(entry, \"agent_id\", None)\n        return f\" [id {agent_id}]\" if agent_id else \"\"",
+      "mutated": "        agent_id = getattr(entry, \"agent_id\", None)\n        from cclogger.models import short_agent_id\n        return f\" [id {short_agent_id(agent_id)}]\" if agent_id else \"\"",
+      "note": "reason: the bracket suffix carries the short id instead of the full one -- `[id a7c41e0b]` instead of `[id a7c41e0b9d2f53e18]`, destroying the one place the whole id is recorded."
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "original": "        short = short_agent_id(tool_info.agent_id)\n        if short and (with_id or ctx == UNTYPED_AGENT_CLASSIFIER):\n            return f\"{tool_info.name}|{ctx}/{short}\"",
+      "mutated": "        short = short_agent_id(tool_info.agent_id)\n        if short:\n            return f\"{tool_info.name}|{ctx}/{short}\"",
+      "note": "reason: with_id ignored -- the baked always-mode string picks up the id, so always/auto channels start rendering `Bash|explore/a7c41e0b` and no longer match the pre-feature output."
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "original": "    legacy_complete_t: Optional[str] = None\n    if tool_info.agent_context:\n        legacy_complete_t = (\n            f\"{datetime_part}{{{_legacy_body_for(LABEL_SENTINEL)}{marker} }}{pwd_part}\"\n        )",
+      "mutated": "    legacy_complete_t: Optional[str] = None\n    if tool_info.agent_context:\n        legacy_complete_t = (\n            f\"{datetime_part}{{{_legacy_body_for(tool_display)}{marker} }}{pwd_part}\"\n        )",
+      "note": "reason: the template is baked with the already-rendered tool_display rather than the sentinel -- the formatter's replace() finds nothing, so id-mode labels never reach precomputed tool lines."
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "original": "        tool_display = f\"?{tool_display}\"\n        tool_display_base = f\"?{tool_display_base}\"",
+      "mutated": "        tool_display = f\"?{tool_display}\"",
+      "note": "reason: the uncategorized `?` prefix is lost from tool_display_base -- unknown tools keep `?` in always mode but silently lose it in the id modes, breaking grep-by-`{?Tool` in exactly the channels that relabel."
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "original": "    if marker:\n        if summary is not None:\n            summary = f\"{summary}{marker}\"\n        if summary_t is not None:\n            summary_t = f\"{summary_t}{marker}\"",
+      "mutated": "    if marker:\n        if summary is not None:\n            summary = f\"{summary}{marker}\"",
+      "note": "reason: the labelled summary template loses the trailing marker -- id-mode template entries drop the marker that the always-mode summary still carries, so the two renderings diverge."
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/default.py",
+      "original": "        legacy_complete = entry.metadata.get(\"_legacy_complete\")\n        if label is not None:\n            template = entry.metadata.get(\"_legacy_complete_t\")",
+      "mutated": "        legacy_complete = entry.metadata.get(\"_legacy_complete\")\n        if label is not None and entry.summary:\n            template = entry.metadata.get(\"_legacy_complete_t\")",
+      "note": "reason: the legacy template is only filled when a summary exists -- summary-less tools (Bash, Read, Grep) fall back to the always string and never show the id label."
+    },
+    {
+      "id": "M13",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "original": "        body = self._truncate(entry.raw_content or \"\", max_chars) + self._agent_id_suffix(entry)",
+      "mutated": "        body = self._truncate(entry.raw_content or \"\", max_chars)",
+      "note": "reason: the chat formatter drops the bracket suffix -- agent-start/agent-stop lines in chat channels lose ` [id a7c41e0b9d2f53e18]` while the default formatter still emits it."
+    },
+    {
+      "id": "M14",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "original": "    if \"agent_label\" in override:\n        from cclogger.models import AGENT_LABEL_MODES\n        v = override[\"agent_label\"]\n        if v in AGENT_LABEL_MODES:\n            target.agent_label = v",
+      "mutated": "    if \"agent_label\" in override:\n        v = override[\"agent_label\"]\n        if v in (\"always\", \"auto\", \"never\"):\n            target.agent_label = v",
+      "note": "reason: config merge rejects the new modes -- `agent_label: \"id\"` / `\"auto-id\"` in user config is silently discarded and the channel keeps the default always mode."
+    }
+  ]
+}

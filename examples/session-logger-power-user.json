@@ -1,6 +1,6 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "POWER USER preset: all channels enabled, including per-channel subtype splits -- shell and tools split by subtype below (.shell-powershell_*, .tools-github_*, ...), and the agents channel splits per-agent by default (.agents-help_*, ...) without any config. Uses routing.channels.<name>.options.subtype_split (the per-channel field that replaced the removed routing.subtype_routing category toggle in v0.3.7-pre). Maximum visibility.",
+  "_comment": "POWER USER preset: every channel on, including the three that ship switched off, plus per-channel subtype splits -- shell and tools split by subtype (.shell-powershell_*, .tools-github_*, ...) and the agents channel splits per agent type by default. Agent ids appear in every label so concurrent runs of one type read apart, and the reasoning-only channel collects every thinking entry in one place. Maximum visibility; expect the largest files.",
 
   "performance": {
     "skill_args_length": 200,
@@ -13,12 +13,31 @@
   },
   "routing": {
     "channels": {
-      "shell":    {"file_prefix": ".shell_",    "enabled": true, "options": {"subtype_split": true}},
-      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": true},
-      "tasks":    {"file_prefix": ".tasks_",    "enabled": true},
-      "tools":    {"file_prefix": ".tools_",    "enabled": true, "options": {"subtype_split": true}},
-      "convo":    {"file_prefix": ".convo_",    "enabled": true},
-      "unknowns": {"file_prefix": ".unknowns_", "enabled": true}
+      "shell":        {"file_prefix": ".shell_",        "enabled": true, "options": {"subtype_split": true}},
+      "sesslog":      {"file_prefix": ".sesslog_",      "enabled": true},
+      "sesslog-main": {"file_prefix": ".sesslog-main_", "enabled": true},
+      "tools":        {"file_prefix": ".tools_",        "enabled": true, "options": {"subtype_split": true}},
+      "tasks":        {"file_prefix": ".tasks_",        "enabled": true},
+      "unknowns":     {"file_prefix": ".unknowns_",     "enabled": true},
+      "fileio":       {"file_prefix": ".fileio_",       "enabled": true},
+      "tools-output": {"file_prefix": ".tools-output_", "enabled": true},
+      "thinking":     {"file_prefix": ".thinking_",     "enabled": true},
+
+      "convo": {
+        "file_prefix": ".convo_",
+        "enabled": true,
+        "options": {"agent_label": "id"}
+      },
+
+      "agents": {
+        "file_prefix": ".agents_",
+        "enabled": true,
+        "options": {
+          "subtype_split": true,
+          "collect": {"agent_context": true},
+          "agent_label": "auto-id"
+        }
+      }
     }
   }
 }

@@ -646,23 +646,32 @@ def format_datetime(mode: str, timestamp: Optional[datetime] = None) -> str:
     return ""
 
 
-def format_tool_name(tool_info: ToolInfo) -> str:
+# Stands in for the tool label in the strings generate_entry bakes for
+# entries made inside an agent; the formatter replaces it with the label form
+# its channel's agent_label mode calls for. Never reaches a log line.
+LABEL_SENTINEL = "\x00label\x00"
+
+
+def format_tool_name(tool_info: ToolInfo, with_id: bool = False) -> str:
     """Format tool name with optional agent context prefix.
 
     Examples:
         - "Bash" (main session)
         - "Bash|Explore" (running inside Explore subagent)
         - "Read|Plan" (running inside Plan subagent)
-        - "Bash|untyped/a000e885b41c764eb" (inside one of Claude Code's
-          untyped side-queries -- the bucket names the class, the id is
-          the only attribution; same rule as the AGENT:untyped/<id> report
-          label, 2026-09-02)
+        - "Bash|Explore/a7c41e0b" (the same under with_id -- the id label
+          modes, 2026-09-03; the id in its label form, AGENT_ID_LABEL_CHARS)
+        - "Bash|untyped/a000e885" (inside one of Claude Code's untyped
+          side-queries -- the bucket names the class, the id is the only
+          attribution, so it is carried in every mode; same rule as the
+          AGENT:untyped/<id> report label, 2026-09-02)
     """
     ctx = tool_info.agent_context
     if ctx:
-        from cclogger.models import UNTYPED_AGENT_CLASSIFIER
-        if ctx == UNTYPED_AGENT_CLASSIFIER and tool_info.agent_id:
-            return f"{tool_info.name}|{ctx}/{tool_info.agent_id}"
+        from cclogger.models import UNTYPED_AGENT_CLASSIFIER, short_agent_id
+        short = short_agent_id(tool_info.agent_id)
+        if short and (with_id or ctx == UNTYPED_AGENT_CLASSIFIER):
+            return f"{tool_info.name}|{ctx}/{short}"
         return f"{tool_info.name}|{ctx}"
     return tool_info.name
 
@@ -685,6 +694,41 @@ def _role_from_tool_name(tool_name: str) -> str:
             out_chars.append("-")
         out_chars.append(ch.lower())
     return "".join(out_chars)
+
+
+FAILURE_REASON_MAX_CHARS = 120
+
+
+def failure_reason_from_payload(raw_json: dict) -> Optional[str]:
+    """The one-line reason a tool call failed, or None when it succeeded
+    (#57, 2026-09-03). `PostToolUseFailure` carries `tool_error`; on the
+    success path a `tool_response` may still say `interrupted` or carry a
+    non-zero `exit_code`. The reason is the error's first non-empty line,
+    capped at FAILURE_REASON_MAX_CHARS -- the log records that a call
+    failed and why in one line; the full text lives in the transcript."""
+    if not isinstance(raw_json, dict):
+        return None
+
+    def _first_line(text: str) -> str:
+        for line in str(text).splitlines():
+            line = line.strip()
+            if line:
+                return line[:FAILURE_REASON_MAX_CHARS]
+        return ""
+
+    if raw_json.get("hook_event_name") == "PostToolUseFailure":
+        err = raw_json.get("tool_error")
+        if isinstance(err, dict):
+            err = err.get("message") or err.get("error") or json.dumps(err, separators=(",", ":"))
+        return _first_line(err) if err else "failed"
+    response = raw_json.get("tool_response")
+    if isinstance(response, dict):
+        if response.get("interrupted") is True:
+            return "interrupted"
+        code = response.get("exit_code")
+        if isinstance(code, int) and not isinstance(code, bool) and code != 0:
+            return f"exit {code}"
+    return None
 
 
 def generate_entry(tool_info: ToolInfo, config: Config, command_content,
@@ -718,21 +762,24 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
     if config.pwd_enabled:
         pwd_part = f' ["{os.getcwd()}"]'
 
-    # Get tool name with agent context -- and (#55) its context-free twin.
-    # These strings are FINAL at generation time (the legacy assembly bakes
-    # the label into _legacy_complete/summary), so per-channel agent_label
-    # modes are served by dual-rendering both variants here and letting the
-    # formatter pick. The full generation->formatter assembly move remains a
-    # #44-era refactor candidate; dual-render is the honest minimal bridge.
+    # Get tool name with agent context. These strings are FINAL at generation
+    # time (the legacy assembly bakes the label into _legacy_complete/summary),
+    # and the `always` rendering is baked as is -- the v0.3.6 bytes. For an
+    # entry made inside an agent the same bodies are ALSO baked with a label
+    # sentinel (#55 dual-render generalized, 2026-09-03): the formatter fills
+    # in the form its channel's agent_label mode calls for -- plain, or the
+    # id forms of unit 7 -- from `tool_display_base`. The full
+    # generation->formatter assembly move remains a #44-era refactor
+    # candidate; the template is the honest minimal bridge.
     tool_display = format_tool_name(tool_info)
-    tool_display_plain = tool_info.name
+    tool_display_base = tool_info.name
 
     # Prefix uncategorized tools with `?` for grep-friendly identification
     # within any channel. Pattern remains parseable: `{?ToolName: ...}`.
     is_unknown = categorize_tool(tool_info.name) == "unknown"
     if is_unknown:
         tool_display = f"?{tool_display}"
-        tool_display_plain = f"?{tool_display_plain}"
+        tool_display_base = f"?{tool_display_base}"
 
     def _legacy_body_for(display: str) -> str:
         """v0.3.6-shaped body for one label variant (byte-identical ladder)."""
@@ -749,11 +796,18 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
             return f"{display}: {legacy_string} {tool_input_json}"
         return f"{display}: {legacy_string}"
 
-    legacy_complete = f"{datetime_part}{{{_legacy_body_for(tool_display)} }}{pwd_part}"
-    legacy_complete_plain: Optional[str] = None
+    # #57 (2026-09-03): a failed call carries its reason INSIDE the frame at
+    # every verbosity -- `{Edit: path [FAILED: anchor not found] }` -- so
+    # every formatter inherits the marker and the frame padding still sees
+    # the entry shape. Successful calls are byte-identical to before.
+    failure_reason = failure_reason_from_payload(tool_info.raw_json)
+    marker = f" [FAILED: {failure_reason}]" if failure_reason else ""
+
+    legacy_complete = f"{datetime_part}{{{_legacy_body_for(tool_display)}{marker} }}{pwd_part}"
+    legacy_complete_t: Optional[str] = None
     if tool_info.agent_context:
-        legacy_complete_plain = (
-            f"{datetime_part}{{{_legacy_body_for(tool_display_plain)} }}{pwd_part}"
+        legacy_complete_t = (
+            f"{datetime_part}{{{_legacy_body_for(LABEL_SENTINEL)}{marker} }}{pwd_part}"
         )
 
     # Build the LogEntry's `summary` field: when the handler provided a
@@ -774,9 +828,14 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
         return f"{display}: {summary_template}"
 
     summary = _summary_for(tool_display)
-    summary_plain: Optional[str] = None
+    summary_t: Optional[str] = None
     if tool_info.agent_context:
-        summary_plain = _summary_for(tool_display_plain)
+        summary_t = _summary_for(LABEL_SENTINEL)
+    if marker:
+        if summary is not None:
+            summary = f"{summary}{marker}"
+        if summary_t is not None:
+            summary_t = f"{summary_t}{marker}"
 
     return LogEntry(
         raw_content=raw_content,
@@ -784,8 +843,9 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
         summary=summary,
         metadata={
             "_legacy_complete": legacy_complete,
-            "_legacy_complete_plain": legacy_complete_plain,
-            "summary_plain": summary_plain,
+            "_legacy_complete_t": legacy_complete_t,
+            "summary_t": summary_t,
+            "tool_display_base": tool_display_base,
             "pwd_part": pwd_part,
             "datetime_part": datetime_part,
             "is_unknown_tool": is_unknown,
@@ -794,4 +854,14 @@ def generate_entry(tool_info: ToolInfo, config: Config, command_content,
         tool_name=tool_info.name,
         agent_context=tool_info.agent_context,
         agent_id=tool_info.agent_id,
+        # Which leg of an agent's story a tool entry is (2026-09-03): a call
+        # made INSIDE an agent is internal; the Agent/Task call that starts
+        # one is the dispatch; anything else is main-thread work (None).
+        agent_leg=(
+            "internal" if tool_info.agent_context
+            else "dispatch" if tool_info.name in ("Agent", "Task")
+            else None
+        ),
+        is_failure=bool(failure_reason),
+        failure_reason=failure_reason,
     )

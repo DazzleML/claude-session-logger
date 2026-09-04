@@ -16,6 +16,10 @@ A hook-based extension for Claude Code that provides persistent session logging,
 - **Transcript Symlinks** - Easy access to transcript files via `transcript.jsonl` in sesslog directories
 - **Run Tracking** - Track multiple runs within a session with run markers
 - **Task Logging** - Dedicated logging for TaskCreate/TaskUpdate/TaskList operations
+- **Subagent Capture** - Each subagent's own tool calls, narration, thinking and final report land in its own file, bracketed by start and stop lines
+- **Thinking** - Claude's reasoning is recorded alongside what it said, as `{THINK: ...}` and `{AGENT-THINK:<type> ...}`; switchable per channel or off entirely
+- **Two Timelines** - `.sesslog_*` is everything; `.sesslog-main_*` is the same session with the agents' internal work left out
+- **Failed Calls Marked** - A tool call that fails is logged like any other, with its reason inline: `{Edit: path [FAILED: anchor not found] }`
 - **AI Rename** - `/renameAI` command for AI-assisted session naming
 - **Session Info** - `/sessioninfo` command to inspect current session state
 
@@ -45,11 +49,19 @@ Once installed, all Claude Code sessions are automatically logged to:
 
 ```
 ~/.claude/sesslogs/{session-name}__{session-id}_{user}/
-├── .sesslog_*.log          # Session log (tool calls, timestamps)
+├── .sesslog_*.log          # Everything, one timeline (tool calls, prose, thinking, agents)
+├── .sesslog-main_*.log     # The same session without the agents' internal work
 ├── .shell_*.log            # Shell command output
+├── .tools_*.log            # Tool calls without prose
 ├── .tasks_*.log            # Task operations log
+├── .convo_*.log            # User prompts, AI responses, agent dialogue
+├── .agents_*.log           # Subagent activity
+├── .agents-<type>_*.log    # One file per agent type: its dispatch, work, thinking and report
+├── .unknowns_*.log         # Tools the plugin doesn't recognize yet
 └── transcript.jsonl        # Symlink to transcript file
 ```
+
+Every channel is configurable and a few more ship switched off — see the [Configuration Guide](docs/configuration.md).
 
 ### Auto-Naming Examples
 
@@ -98,9 +110,11 @@ The hook creates these directories automatically:
 - `~/.claude/session-states/` - Session state persistence
 - `~/.claude/logs/` - Debug logs (when enabled)
 
+Which activity lands in which file is configurable per channel: turn channels on or off, split them per subagent, choose how much of each entry to show, drop entries you don't want, and label concurrent agents by id. See the [Configuration Guide](docs/configuration.md) and [Log Channels](docs/log-channels.md); `examples/` has five drop-in presets.
+
 ### Debug Logging
 
-To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Check this file if hooks aren't working as expected.
+To enable debug logging, the hook writes to `~/.claude/logs/hook-debug.log`. Check this file if hooks aren't working as expected. Invocations slower than a second also record one line each in `~/.claude/logs/session-logger-perf.log`.
 
 ## Platform Support
 

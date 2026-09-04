@@ -1,0 +1,141 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\\mut-root-u7",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_agent_id_label.py"
+    ],
+    "timestamp": "2026-09-03T22:57:31-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: label width silently narrowed -- ids render as `explore/a7c41e` instead of the 8-char `explore/a7c41e0b`, so any test asserting the exact short form must fail.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: None/empty guard dropped -- short_agent_id(None) returns the string 'None', so an entry with no agent id renders `explore/None` instead of plain `explore`.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: untyped clause dropped -- the untyped bucket loses its short id under always/auto, collapsing every unnamed agent back into one indistinguishable `untyped` label.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: auto-id no longer counts as an auto mode -- inside the agent's own file (agents-explore) the type stops being dropped, so labels read `explore/a7c41e0b` where they should read bare `a7c41e0b`.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: the two id label forms are swapped -- the agent's own file gets `explore/a7c41e0b` and every other channel gets a bare `a7c41e0b` with no type at all.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: _tool_label bails out for the id modes too -- tool lines fall back to the baked `always` string, so `Bash|explore/a7c41e0b` regresses to `Bash|explore` under id/auto-id.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "note": "reason: the bracket suffix carries the short id instead of the full one -- `[id a7c41e0b]` instead of `[id a7c41e0b9d2f53e18]`, destroying the one place the whole id is recorded.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: with_id ignored -- the baked always-mode string picks up the id, so always/auto channels start rendering `Bash|explore/a7c41e0b` and no longer match the pre-feature output.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: the template is baked with the already-rendered tool_display rather than the sentinel -- the formatter's replace() finds nothing, so id-mode labels never reach precomputed tool lines.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: the uncategorized `?` prefix is lost from tool_display_base -- unknown tools keep `?` in always mode but silently lose it in the id modes, breaking grep-by-`{?Tool` in exactly the channels that relabel.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: the labelled summary template loses the trailing marker -- id-mode template entries drop the marker that the always-mode summary still carries, so the two renderings diverge.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/default.py",
+      "note": "reason: the legacy template is only filled when a summary exists -- summary-less tools (Bash, Read, Grep) fall back to the always string and never show the id label.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M13",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "note": "reason: the chat formatter drops the bracket suffix -- agent-start/agent-stop lines in chat channels lose ` [id a7c41e0b9d2f53e18]` while the default formatter still emits it.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M14",
+      "file": "hooks/scripts/cclogger/config_merge.py",
+      "note": "reason: config merge rejects the new modes -- `agent_label: \"id\"` / `\"auto-id\"` in user config is silently discarded and the channel keeps the default always mode.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 13,
+    "survived": 1
+  },
+  "anomalies": []
+}

@@ -1,0 +1,108 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u2",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_sidechain_reader.py"
+    ],
+    "timestamp": "2026-09-03T19:09:50-04:00"
+  },
+  "results": [
+    {
+      "id": "N1",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "cursor path: hyphen/underscore stripped from the id (ids collide).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "timestamp: non-string value raises past the parser.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N3",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: top-level content fallback removed (re-anchored on `return blocks`).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: non-dict block raises and discards the whole read.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N5",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: non-str text coerced instead of skipped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N6",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: config.thinking ignored.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N7",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: payload message not stripped (trailing newline -> false mismatch).",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: payload report borrows the last sidechain timestamp.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: mismatch branch drops the last sidechain item.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N10",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "legs: every main-thread tool call tagged dispatch.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 10
+  },
+  "anomalies": []
+}

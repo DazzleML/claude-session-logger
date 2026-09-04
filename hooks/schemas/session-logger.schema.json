@@ -43,6 +43,12 @@
       "additionalProperties": false
     },
 
+    "thinking": {
+      "type": "boolean",
+      "default": true,
+      "description": "Global thinking capture (2026-09-03). true (default): thinking blocks are extracted from the main transcript and from agent sidechain transcripts and route like the narration they belong to (sesslog, convo, the per-agent files) as {THINK: ...} / {AGENT-THINK:<type> ...} entries. false: never extracted -- no entry is built, no cost. Per-channel placement is routing.channels.<name>.options.thinking."
+    },
+
     "display": {
       "type": "object",
       "description": "Log entry display settings",
@@ -131,12 +137,17 @@
                   },
                   "agent_label": {
                     "type": "string",
-                    "enum": ["always", "auto", "never"],
+                    "enum": ["always", "auto", "never", "id", "auto-id"],
                     "default": "always",
-                    "description": "#55: how agent identity renders in this channel's labels. 'always' (default): tool entries show {Bash|Explore: ...} and agent-role entries show {AGENT:explore ...}. 'auto': same, except the identity is dropped when it merely repeats the channel's own subtype (.agents-explore_* entries read {Bash: ...} -- the filename already says who). 'never': plain labels."
+                    "description": "#55: how agent identity renders in this channel's labels. 'always' (default): tool entries show {Bash|Explore: ...} and agent-role entries show {AGENT:explore ...}. 'auto': same, except the identity is dropped when it merely repeats the channel's own subtype (.agents-explore_* entries read {Bash: ...} -- the filename already says who). 'never': plain labels. 'id' / 'auto-id': as always / auto, with the first 8 characters of the agent's id after the type ({Bash|explore/a7c41e0b: ...}, {AGENT:explore/a7c41e0b ...}; under auto-id inside .agents-explore_* just a7c41e0b), so concurrent runs of one agent type read apart; the AGENT-START / AGENT-STOP lines then carry the full id once ([id ...])."
+                  },
+                  "thinking": {
+                    "type": ["boolean", "null"],
+                    "default": null,
+                    "description": "Thinking entries on this channel (2026-09-03): readable sugar over exclude {\"kind\": [\"thinking\"]}. false = this channel never receives thinking entries (derived .<channel>-<subtype>_* files inherit it); true or null = inherit the default (thinking routes wherever the narration it belongs to routes). Defaults: on for sesslog, convo and agents; off for sesslog-main."
                   },
                   "collect": {
-                    "description": "#53 emitter/collector predicate: entries this channel ADDITIONALLY collects, keyed by entry attribute name. This version recognizes 'agent_context' (a subagent's internal tool calls + its final report); unknown keys warn once and are ignored so configs from newer versions degrade gracefully. Values: true = collect any entry with the attribute set; list[str] = collect only listed attribute values (e.g. [\"oracle\", \"help\"]). Additive -- collected entries keep every channel their category route gave them. Default {\"agent_context\": true} on the agents channel only; collected entries split by the attribute value when subtype_split is enabled (.agents-explore_*, ...).",
+                    "description": "#53 emitter/collector predicate: entries this channel ADDITIONALLY collects, keyed by entry attribute name. This version recognizes 'agent_context' (a subagent's internal tool calls + its final report), 'kind' ('text' | 'thinking' -- the thinking channel collects {\"kind\": [\"thinking\"]}), 'agent_leg' ('dispatch' | 'internal' | 'report') and 'is_failure' (true = a failed tool call, marked [FAILED: reason]; e.g. a failures-only channel collects {\"is_failure\": true}); unknown keys warn once and are ignored so configs from newer versions degrade gracefully. Values: true = collect any entry with the attribute set; list[str] = collect only listed attribute values (e.g. [\"oracle\", \"help\"]). Additive -- collected entries keep every channel their category route gave them. Default {\"agent_context\": true} on the agents channel only; collected entries split by the attribute value when subtype_split is enabled (.agents-explore_*, ...).",
                     "type": ["object", "null"],
                     "additionalProperties": {
                       "oneOf": [
@@ -146,7 +157,7 @@
                     }
                   },
                   "exclude": {
-                    "description": "Subtractive mirror of `collect` (v0.3.16): entries this channel must NOT receive, keyed by entry attribute name, same value grammar (true = any entry carrying the attribute; list[str] = only those attribute values). Evaluated after routing, collection and subtype expansion; exclude beats collect; derived `<base>-<subtype>` channels inherit the base channel's exclude unless declared themselves. Unknown keys warn once and are ignored. Default: none -- every channel receives everything its routes give it. Typical use: `{\"agent_context\": [\"untyped\"]}` on `convo` (or `agents`) to hide Claude Code's untyped side-query entries from that channel; `.sesslog_*` always keeps the full record.",
+                    "description": "Subtractive mirror of `collect` (v0.3.16): entries this channel must NOT receive, keyed by entry attribute name ('agent_context', 'kind', 'agent_leg', 'is_failure'), same value grammar (true = any entry carrying the attribute; list[str] = only those attribute values). Evaluated after routing, collection and subtype expansion; exclude beats collect; derived `<base>-<subtype>` channels inherit the base channel's exclude unless declared themselves. Unknown keys warn once and are ignored. Default: none -- every channel receives everything its routes give it. Typical use: `{\"agent_context\": [\"untyped\"]}` on `convo` (or `agents`) to hide Claude Code's untyped side-query entries from that channel; `.sesslog_*` always keeps the full record.",
                     "type": ["object", "null"],
                     "additionalProperties": {
                       "oneOf": [

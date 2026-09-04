@@ -1,0 +1,36 @@
+{
+  "_about": "U7 agent-id label mode, round 2 (refinement, fresh generation after round 1's one killable survivor): frame f1.7 of the sidechain-capture-release gauntlet, 2026-09-03. N1-Nn: fresh-context generator (mode 1, zero tools, source excerpts only). Root: an ISOLATED COPY of hooks/ + tests/one-offs/ under the session scratchpad. Round 2b: N2, N4, N11 re-run after one test each was written for them.",
+  "test_command": [
+    "python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests/one-offs/test_agent_id_label.py"
+  ],
+  "mutations": [
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        if self.channel_opts is None:\n            return \"always\"",
+      "mutated": "        if self.channel_opts is None:\n            return \"id\"",
+      "note": "reason: default mode for a channel with no options becomes an id mode, so unconfigured channels start emitting ids."
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/formatters/base.py",
+      "original": "        norm = normalize_subtype(ctx)\n        if not norm:\n            return None",
+      "mutated": "        norm = normalize_subtype(ctx)",
+      "note": "reason: unnormalizable agent context no longer suppressed, so a label like 'None/a7c41e0b' can render."
+    },
+    {
+      "id": "N11",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "original": "        body = self._truncate(entry.raw_content or \"\", max_chars) + self._agent_id_suffix(entry)",
+      "mutated": "        body = self._truncate((entry.raw_content or \"\") + self._agent_id_suffix(entry), max_chars)",
+      "note": "reason: id suffix folded in before truncation, so a long bracket line truncates the id away instead of always ending with it."
+    }
+  ]
+}

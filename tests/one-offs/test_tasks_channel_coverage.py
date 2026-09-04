@@ -52,7 +52,7 @@ class TestTodoCategoryRouting:
     def test_default_routes_include_todo(self):
         routes = _default_category_routes()
         assert "todo" in routes
-        assert routes["todo"] == ["shell", "sesslog", "tools", "tasks"]
+        assert routes["todo"] == ["shell", "sesslog", "sesslog-main", "tools", "tasks"]
 
     def test_todo_route_includes_tasks_channel(self):
         routes = _default_category_routes()
@@ -69,10 +69,11 @@ class TestTodoCategoryRouting:
         assert "shell" in channels
 
     def test_task_category_routing_unchanged(self):
-        # Regression: TaskCreate still routes to all four channels.
+        # Regression: TaskCreate still routes to all four channels
+        # (+ sesslog-main since the 2026-09-03 sidechain-capture unit 6).
         _, get_channels = _make_logger()
         channels = get_channels("TaskCreate", "task")
-        assert set(channels) == {"shell", "sesslog", "tools", "tasks"}
+        assert set(channels) == {"shell", "sesslog", "sesslog-main", "tools", "tasks"}
 
 
 # ============================================================================
@@ -268,7 +269,7 @@ class TestTaskStopOutputDefaultOverrides:
         assert "TaskStop" in config.routing.tool_overrides
         assert "tasks" not in config.routing.tool_overrides["TaskStop"]
         # TaskStop kept in shell (it's a kill command, fits .bash_history)
-        assert config.routing.tool_overrides["TaskStop"] == ["shell", "sesslog", "tools"]
+        assert config.routing.tool_overrides["TaskStop"] == ["shell", "sesslog", "sesslog-main", "tools"]
 
     def test_default_tool_overrides_drop_taskoutput_from_tasks_AND_shell(self):
         config = Config()
@@ -279,14 +280,14 @@ class TestTaskStopOutputDefaultOverrides:
         assert "shell" not in config.routing.tool_overrides["TaskOutput"]
         # Routed to tools (snippet) + sesslog (capped preview) + tools-output
         # (full content, disabled by default so it's a no-op opt-in).
-        assert config.routing.tool_overrides["TaskOutput"] == ["sesslog", "tools", "tools-output"]
+        assert config.routing.tool_overrides["TaskOutput"] == ["sesslog", "sesslog-main", "tools", "tools-output"]
 
     def test_taskstop_routing_via_get_channels(self):
         # End-to-end: TaskStop (category=task) is overridden away from tasks.
         _, get_channels = _make_logger()
         channels = get_channels("TaskStop", "task")
         assert "tasks" not in channels
-        assert channels == ["shell", "sesslog", "tools"]
+        assert channels == ["shell", "sesslog", "sesslog-main", "tools"]
 
     def test_taskoutput_routing_via_get_channels(self):
         _, get_channels = _make_logger()
@@ -296,7 +297,7 @@ class TestTaskStopOutputDefaultOverrides:
         # tools-output is included so users who opt-in (enabled=True) get
         # full content captured to .tools-output_*; disabled-by-default
         # means it's a no-op for users who don't care.
-        assert channels == ["sesslog", "tools", "tools-output"]
+        assert channels == ["sesslog", "sesslog-main", "tools", "tools-output"]
 
     def test_other_task_family_tools_still_route_to_tasks(self):
         # Regression: TaskCreate/Update/List/Get unaffected -- they ARE
@@ -313,7 +314,7 @@ class TestTaskStopOutputDefaultOverrides:
         config = Config()
         apply_override_routing_config(
             config.routing,
-            {"tool_overrides": {"TaskStop": ["shell", "sesslog", "tools", "tasks"]}},
+            {"tool_overrides": {"TaskStop": ["shell", "sesslog", "sesslog-main", "tools", "tasks"]}},
         )
         _, get_channels = _make_logger(config)
         channels = get_channels("TaskStop", "task")
@@ -324,7 +325,7 @@ class TestTaskStopOutputDefaultOverrides:
         config = Config()
         apply_override_routing_config(
             config.routing,
-            {"tool_overrides": {"TaskOutput": ["shell", "sesslog", "tools"]}},
+            {"tool_overrides": {"TaskOutput": ["shell", "sesslog", "sesslog-main", "tools"]}},
         )
         _, get_channels = _make_logger(config)
         channels = get_channels("TaskOutput", "task")

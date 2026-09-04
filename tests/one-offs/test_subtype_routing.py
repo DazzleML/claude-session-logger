@@ -182,10 +182,10 @@ class TestExpandWithSubtypeChannels:
         # agents defaults subtype_split=True
         # Task without subagent_type -> subtype is None -> no expand
         result = logger._expand_with_subtype_channels(
-            ["sesslog", "agents"], "Task", "meta",
+            ["sesslog", "sesslog-main", "agents"], "Task", "meta",
             raw_json={"tool_name": "Task", "tool_input": {"prompt": "do thing"}},
         )
-        assert result == ["sesslog", "agents"]
+        assert result == ["sesslog", "sesslog-main", "agents"]
 
     def test_agents_default_expansion_works_without_user_config(self):
         """`agents` ships with subtype_split=True so `.agents-<subagent>_*`
@@ -193,7 +193,7 @@ class TestExpandWithSubtypeChannels:
         path for users who previously needed `subtype_routing.meta: true`."""
         logger = self._make_logger()
         result = logger._expand_with_subtype_channels(
-            ["sesslog", "agents"], "Task", "meta",
+            ["sesslog", "sesslog-main", "agents"], "Task", "meta",
             raw_json={"tool_name": "Task", "tool_input": {"subagent_type": "senior-engineer"}},
         )
         assert "sesslog" in result

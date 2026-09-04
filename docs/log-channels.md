@@ -25,10 +25,22 @@ claude-session-logger creates separate log files for different types of activity
 
 Every entry's frame braces pair even when the body contains an unmatched brace (the body stays verbatim; the balance is restored outside the frame) -- see "Entry framing: the braces always match" in `channels.md`.
 
+**Companion: the main-thread view (`.sesslog-main_*.log`)** -- the same timeline with each agent's internal work (its own tool calls, narration and thinking) and all thinking left out; agent dispatches, `AGENT-START` / `AGENT-STOP` brackets and reports stay. Enabled by default; turn it off with `{"routing": {"channels": {"sesslog-main": {"enabled": false}}}}`.
+
+**A failed tool call is logged like any other**, with its reason inside the frame at every verbosity, so a grep for `[FAILED:` finds every one:
+
+```
+[[2026-01-29 10:31:40]] {Edit: /path/to/file.py [FAILED: String to replace not found in file.] }
+[[2026-01-29 10:31:52]] {Bash: pytest tests/ [FAILED: exit 1] }
+```
+
+**Reasoning is recorded too**, wherever the narration it belongs to goes: `{THINK: ...}` on the main thread and `{AGENT-THINK:<type> ...}` inside a subagent. It is on by default in `.sesslog_*`, `.convo_*` and the per-agent files, off in `.sesslog-main_*`, and switchable per channel or globally (see `docs/configuration.md`).
+
 **Use cases**:
 - Quick scan of what Claude did in a session
 - Identify which files were touched
 - Track session timing and duration
+- Find the calls that failed, and why
 
 ### Shell Log (`.shell_*.log`)
 
@@ -81,6 +93,33 @@ tests/test_paths.py::test_cross_platform PASSED
 - Review what Claude planned to do
 - Correlate tasks with actual work done
 - Audit task lifecycle
+
+### Agent Logs (`.agents_*.log`, `.agents-<type>_*.log`)
+
+**Purpose**: each subagent's whole story in one place
+
+**Contains**, per agent type, in one file:
+- The dispatch — the prompt that started the agent
+- A start bracket, then every tool call the agent made, attributed to it
+- The agent's own narration and thinking
+- Its final report, then a stop bracket counting what the burst held
+
+**Example output**:
+```
+[[2026-01-29 11:02:03]] {Agent|explore: find every caller of load_config}
+[[2026-01-29 11:02:03]] {AGENT-START:explore: find every caller of load_config }
+[[2026-01-29 11:02:07]] {Grep|explore: load_config}
+[[2026-01-29 11:02:11]] {AGENT-THINK:explore: Three call sites, one of them in a test... }
+[[2026-01-29 11:02:14]] {AGENT:explore: Four callers: cli.py:44, ... }
+[[2026-01-29 11:02:14]] {AGENT-STOP:explore: stopped (2 narration, 1 thinking, report) }
+```
+
+The agent's tool calls appear in `.sesslog_*` live, at the moment they happen; its narration, thinking and report can only be read when the agent stops, so they arrive together at the end. Claude Code's own untyped side-queries share a single `.agents-untyped_*` file and carry their id in the label. Two agents of the same type write to the same file — set `agent_label` to `id` to tell them apart.
+
+**Use cases**:
+- Read one agent's work end to end without the main thread interleaved
+- See what a subagent was asked and what it answered
+- Audit the tool calls made on your behalf inside an agent
 
 ## Sesslog vs Shell: Key Differences
 

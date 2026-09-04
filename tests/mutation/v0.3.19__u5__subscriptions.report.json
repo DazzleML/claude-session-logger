@@ -1,0 +1,125 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u5",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_failure_marker_and_brackets.py"
+    ],
+    "timestamp": "2026-09-03T21:24:25-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: negative exit codes no longer count.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: truthy non-True interrupted values count.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: failure with no error text reads as success.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: first line returned even when blank.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "reason: event name constant wrong.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "marker: plain (agent-context) summary loses the marker.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "attribute: is_failure never set.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "start: untyped forks get a bracket.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "start: last line of a multi-line description.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "start: dispatch leg dropped.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "stop: narration count includes thinking.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/formatters/chat.py",
+      "note": "chat: bracket lines lose their identity.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "survived": 5,
+    "killed": 7
+  },
+  "anomalies": []
+}

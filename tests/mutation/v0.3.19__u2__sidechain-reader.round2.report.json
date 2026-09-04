@@ -1,0 +1,112 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>/mut-root-u2",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_sidechain_reader.py"
+    ],
+    "timestamp": "2026-09-03T18:54:53-04:00"
+  },
+  "results": [
+    {
+      "id": "N1",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "cursor path: hyphen/underscore stripped from the id (ids collide).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N2",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "timestamp: non-string value raises past the parser.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N3",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: top-level content fallback removed.",
+      "verdict": "apply-failed",
+      "restore_ok": true,
+      "output_tail": "N3: expected exactly 1 occurrence of the original text in hooks/scripts/cclogger/conversation.py, found 2"
+    },
+    {
+      "id": "N4",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: non-dict block raises and discards the whole read.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N5",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "extractor: non-str text coerced instead of skipped.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N6",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: config.thinking ignored.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N7",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: payload message not stripped (trailing newline -> false mismatch).",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N8",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: payload report borrows the last sidechain timestamp.",
+      "verdict": "survived",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N9",
+      "file": "hooks/scripts/cclogger/conversation.py",
+      "note": "handler: mismatch branch drops the last sidechain item.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "N10",
+      "file": "hooks/scripts/cclogger/formatters/legacy.py",
+      "note": "legs: every main-thread tool call tagged dispatch.",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "survived": 6,
+    "apply-failed": 1,
+    "killed": 3
+  },
+  "anomalies": [
+    "N3: apply failed -- N3: expected exactly 1 occurrence of the original text in hooks/scripts/cclogger/conversation.py, found 2"
+  ]
+}

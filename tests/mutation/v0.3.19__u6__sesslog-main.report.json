@@ -1,0 +1,124 @@
+{
+  "harness": {
+    "name": "mutation_sweep.py",
+    "version": "0.1.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "root": "<session-scratchpad>\\mut-root-u6",
+    "test_command": [
+      "python",
+      "-B",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/one-offs/test_sesslog_main.py"
+    ],
+    "timestamp": "2026-09-03T21:53:59-04:00"
+  },
+  "results": [
+    {
+      "id": "M1",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: exclude keyed on the wrong dimension (agent_type instead of agent_leg), so internal legs are no longer filtered out of sesslog-main",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M2",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: exclude value inverted -- the channel drops the main leg and keeps every agent's internal legs, the exact opposite of the intent",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M3",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: exclude clause dropped entirely, so sesslog-main becomes a thinking-free duplicate of sesslog with no leg filtering",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M4",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: thinking re-enabled, so the post-init no longer folds exclude[\"kind\"] = [\"thinking\"] and thinking blocks leak into the main channel",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M5",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: thinking=False line dropped (merge/edit loss), leaving the channel on the default thinking setting instead of off",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M6",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: shipped default channel disabled, so sesslog-main is defined and routed but never writes a file",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M7",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: copy-paste prefix regression -- sesslog-main writes to the sesslog file prefix, colliding with the sesslog channel's own log",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M8",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: verbosity drifts from sesslog -- the write hint becomes max_chars 200, so the two channels no longer mirror each other per role",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M9",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: sesslog-main dropped from a conversational route, so user messages are missing from the main-thread log",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M10",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: route order regression -- sesslog-main is named BEFORE sesslog, violating the immediately-after ordering rule",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M11",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: sesslog replaced by sesslog-main on the meta route, producing a route that names sesslog-main without sesslog",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    },
+    {
+      "id": "M12",
+      "file": "hooks/scripts/cclogger/models.py",
+      "note": "reason: tool override missing sesslog-main, so TaskOutput lines reach sesslog but never the main-thread channel",
+      "verdict": "killed",
+      "restore_ok": true,
+      "output_tail": ""
+    }
+  ],
+  "summary": {
+    "killed": 12
+  },
+  "anomalies": []
+}

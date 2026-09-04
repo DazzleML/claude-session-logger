@@ -41,15 +41,15 @@ class TestMessageCategoryRoutes:
 
     def test_message_user_route(self):
         routes = _default_category_routes()
-        assert routes["message_user"] == ["sesslog", "convo"]
+        assert routes["message_user"] == ["sesslog", "sesslog-main", "convo"]
 
     def test_message_ai_route(self):
         routes = _default_category_routes()
-        assert routes["message_ai"] == ["sesslog", "convo"]
+        assert routes["message_ai"] == ["sesslog", "sesslog-main", "convo"]
 
     def test_message_agent_route(self):
         routes = _default_category_routes()
-        assert routes["message_agent"] == ["sesslog", "convo"]
+        assert routes["message_agent"] == ["sesslog", "sesslog-main", "convo"]
 
     def test_message_routes_NOT_in_shell(self):
         # Critical: prose belongs in convo, not shell history

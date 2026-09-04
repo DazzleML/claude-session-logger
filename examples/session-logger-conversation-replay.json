@@ -1,15 +1,21 @@
 {
   "$schema": "../hooks/schemas/session-logger.schema.json",
-  "_comment": "CONVERSATION REPLAY preset: only the convo channel split per direction (user/AI/agent). For transcript reconstruction or chat-style review.",
+  "_comment": "CONVERSATION REPLAY preset: only the convo channel, for transcript reconstruction or chat-style review. Reasoning is left out so the file reads as the conversation as it happened -- drop the thinking option below to keep it. Every other shipped channel is named and switched off, so the promise holds when new channels arrive.",
 
   "routing": {
     "channels": {
-      "shell":    {"file_prefix": ".shell_",    "enabled": false},
-      "sesslog":  {"file_prefix": ".sesslog_",  "enabled": false},
-      "tasks":    {"file_prefix": ".tasks_",    "enabled": false},
-      "tools":    {"file_prefix": ".tools_",    "enabled": false},
-      "convo":    {"file_prefix": ".convo_",    "enabled": true},
-      "unknowns": {"file_prefix": ".unknowns_", "enabled": false}
+      "convo":        {"file_prefix": ".convo_",        "enabled": true,
+                       "options": {"thinking": false}},
+      "shell":        {"file_prefix": ".shell_",        "enabled": false},
+      "sesslog":      {"file_prefix": ".sesslog_",      "enabled": false},
+      "sesslog-main": {"file_prefix": ".sesslog-main_", "enabled": false},
+      "tasks":        {"file_prefix": ".tasks_",        "enabled": false},
+      "tools":        {"file_prefix": ".tools_",        "enabled": false},
+      "agents":       {"file_prefix": ".agents_",       "enabled": false},
+      "unknowns":     {"file_prefix": ".unknowns_",     "enabled": false},
+      "fileio":       {"file_prefix": ".fileio_",       "enabled": false},
+      "tools-output": {"file_prefix": ".tools-output_", "enabled": false},
+      "thinking":     {"file_prefix": ".thinking_",     "enabled": false}
     }
   }
 }

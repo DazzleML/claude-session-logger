@@ -49,7 +49,19 @@ RESERVED_VERBOSITY_KEYS: set[str] = HINT_VERBOSITY_KEYS | PER_ROLE_RESERVED_KEYS
 # gracefully on this one (unknown key -> warn once, ignore) instead of
 # erroring. Adding a collection axis = add the key here + populate the
 # LogEntry attribute at emission; the router needs no change.
-COLLECT_RECOGNIZED_KEYS: set[str] = {"agent_context"}
+COLLECT_RECOGNIZED_KEYS: set[str] = {"agent_context", "kind", "agent_leg", "is_failure"}
+
+# Entry kinds and agent legs (sidechain-capture design, 2026-09-03, unit 1).
+# `LogEntry.kind` says which transcript block an entry came from; `agent_leg`
+# says which part of a subagent's story it is. Both are plain attributes the
+# collect/exclude evaluators resolve generically (AC-10), so a channel can
+# say `exclude: {"kind": ["thinking"]}` or `exclude: {"agent_leg": ["internal"]}`
+# without any router change.
+KIND_TEXT = "text"
+KIND_THINKING = "thinking"
+AGENT_LEG_DISPATCH = "dispatch"   # the Agent tool call that started the agent
+AGENT_LEG_INTERNAL = "internal"   # the agent's own tool calls, narration, thinking
+AGENT_LEG_REPORT = "report"       # the agent's final message back to the parent
 
 # Attribute names a channel may EXCLUDE on (ChannelOptions.exclude) -- the
 # subtractive mirror of collect, same grammar, same forward-compat rule
@@ -57,7 +69,7 @@ COLLECT_RECOGNIZED_KEYS: set[str] = {"agent_context"}
 # Claude Code's untyped side-query entries from any channel they choose
 # (`{"agent_context": ["untyped"]}` on convo, on agents, ...) while the
 # default stays "include everywhere".
-EXCLUDE_RECOGNIZED_KEYS: set[str] = {"agent_context"}
+EXCLUDE_RECOGNIZED_KEYS: set[str] = {"agent_context", "kind", "agent_leg", "is_failure"}
 
 
 # `parse_bool` and `_validate_per_role_dict` live in cclogger/config_merge.py.
@@ -74,6 +86,9 @@ EXCLUDE_RECOGNIZED_KEYS: set[str] = {"agent_context"}
 ROLES: set[str] = {
     # Conversation roles (top-level — sub-roles via :)
     "user", "ai", "agent",
+    # Agent block brackets (2026-09-03, unit 5): the SubagentStart kickoff
+    # line and the line that closes a typed agent's block at SubagentStop.
+    "agent-start", "agent-stop",
     # Tool roles — bash category
     "bash",
     # Tool roles — system category
@@ -99,6 +114,18 @@ ROLE_LABELS: dict[str, str] = {
     "user": "USER",
     "ai": "AI",
     "agent": "AGENT",
+    # Thinking blocks (2026-09-03): display roles chosen by the formatter
+    # from LogEntry.kind == "thinking" -- the entry's own role stays "ai" or
+    # "agent" (verbosity and newline policy resolve on it); only the label
+    # changes. `{THINK: ...}` on the main thread, `{AGENT-THINK:explore ...}`
+    # inside agents. Per-channel role_labels may override either key.
+    "think": "THINK",
+    "agent-think": "AGENT-THINK",
+    # Agent block brackets (2026-09-03, unit 5): `{AGENT-START:explore ...}`
+    # from SubagentStart, `{AGENT-STOP:explore ...}` after the report at
+    # SubagentStop. Typed agents only; the untyped forks keep one line.
+    "agent-start": "AGENT-START",
+    "agent-stop": "AGENT-STOP",
     # Tools: Title-Case (matches current `{Edit: ...}` shape)
     "bash": "Bash",
     "read": "Read",
@@ -180,6 +207,13 @@ class ChannelOptions:
     #                         own subtype (`.agents-explore_*` entries render
     #                         `{Bash: ...}` -- the filename already says who)
     #   "never"            -- plain labels, no agent identity anywhere
+    #   "id" / "auto-id"   -- as "always" / "auto", with the agent's id after
+    #                         the type (`{Bash|explore/a7c41e0b: ...}`,
+    #                         `{AGENT:explore/a7c41e0b ...}`; under auto-id
+    #                         inside `.agents-explore_*` just `a7c41e0b`), so
+    #                         concurrent runs of one type read apart; the
+    #                         START/STOP bracket lines then carry the full id
+    #                         once (2026-09-03, sidechain-capture unit 7)
     agent_label: str = "always"
     # Emitter/collector predicate (#53): entries are emitted carrying
     # attributes (agent_context, ...); a channel declares which it
@@ -203,6 +237,33 @@ class ChannelOptions:
     # and are ignored. Default None: include everywhere (maintainer
     # decision -- the untyped entries are part of the record).
     exclude: Optional[dict] = None
+    # Thinking on this channel (2026-09-03, Addendum 1): readable sugar over
+    # `exclude: {"kind": ["thinking"]}`. None (default) = inherit the global
+    # behaviour (thinking entries route like the narration they belong to);
+    # False = this channel never receives thinking entries; True = leave
+    # any exclude alone. Folded into `exclude` at construction and at merge
+    # (fold_thinking_into_exclude) so the evaluator stays attribute-generic.
+    thinking: Optional[bool] = None
+
+    def __post_init__(self) -> None:
+        fold_thinking_into_exclude(self)
+
+
+def fold_thinking_into_exclude(opts: "ChannelOptions") -> None:
+    """`options.thinking: false` becomes `exclude: {"kind": ["thinking"]}`
+    (merged with whatever exclude the channel already declares). True and
+    None leave `exclude` untouched. Idempotent."""
+    if opts.thinking is not False:
+        return
+    current = dict(opts.exclude) if isinstance(opts.exclude, dict) else {}
+    spec = current.get("kind")
+    if spec is True:
+        return  # already excludes every kind-bearing entry
+    values = [v for v in spec if isinstance(v, str)] if isinstance(spec, list) else []
+    if KIND_THINKING not in values:
+        values.append(KIND_THINKING)
+    current["kind"] = values
+    opts.exclude = current
 
 
 # ============================================================================
@@ -249,6 +310,31 @@ def resolve_agent_identity(data: dict[str, Any]) -> tuple[Optional[str], Optiona
     agent_type = str(data.get("agent_type") or "").strip()
     classifier = agent_type or UNTYPED_AGENT_CLASSIFIER
     return classifier, str(agent_id)
+
+
+# How much of an agent id a label shows (2026-09-03, sidechain-capture unit
+# 7). Agent ids are 17 hex characters with a constant leading `a` (712 of 712
+# on the box that measured it), so eight characters are seven that vary --
+# enough to tell concurrent runs of one type apart, short enough to keep a
+# line compact. A prefix search on the sidechain transcript name
+# (`agent-<prefix>*.jsonl`) or the per-agent cursor recovers the full id, and
+# under the id label modes the START/STOP bracket lines carry it once.
+AGENT_ID_LABEL_CHARS = 8
+
+# ChannelOptions.agent_label: WHEN identity shows (always / auto / never) and,
+# for the id forms, WHAT it shows (`explore/a7c41e0b` instead of `explore`).
+AGENT_LABEL_MODES = ("always", "auto", "never", "id", "auto-id")
+AGENT_LABEL_ID_MODES = ("id", "auto-id")
+AGENT_LABEL_AUTO_MODES = ("auto", "auto-id")
+
+
+def short_agent_id(agent_id: Optional[str]) -> Optional[str]:
+    """The label form of an agent id: its first AGENT_ID_LABEL_CHARS
+    characters (an id that short or shorter is returned whole); None in,
+    None out."""
+    if not agent_id:
+        return None
+    return str(agent_id)[:AGENT_ID_LABEL_CHARS]
 
 
 @dataclass
@@ -354,6 +440,31 @@ def _default_channels() -> dict[str, ChannelConfig]:
                 "task-output": {"max_chars": 200},
             }),
         ),
+        # .sesslog-main_*: the session as the main thread saw it (sidechain-
+        # capture design, 2026-09-03, unit 6). Same routes and verbosity as
+        # sesslog, minus two things the maintainer asked to be able to skip:
+        # every agent's INTERNAL legs (its own tool calls, narration and
+        # thinking -- the dispatch, the START/STOP brackets and the report
+        # stay) and all thinking. Defined entirely in config on the entry
+        # attributes; no mechanism of its own. Enabled by default -- the
+        # maintainer is not yet sure it earns its file, so the off switch
+        # is the first thing the docs show:
+        #   {"routing": {"channels": {"sesslog-main": {"enabled": false}}}}
+        "sesslog-main": ChannelConfig(
+            file_prefix=".sesslog-main_",
+            options=ChannelOptions(
+                verbosity={
+                    "_default": "full",
+                    "write": {"max_chars": 20},
+                    "edit": {"max_chars": 20},
+                    "multi-edit": {"max_chars": 20},
+                    "notebook-edit": {"max_chars": 20},
+                    "task-output": {"max_chars": 200},
+                },
+                exclude={"agent_leg": [AGENT_LEG_INTERNAL]},
+                thinking=False,
+            ),
+        ),
         # .fileio_*: opt-in channel that captures FULL content of file I/O
         # operations (Read/Write/Edit/MultiEdit/NotebookEdit). Disabled by
         # default — most users don't need the full content captured to disk
@@ -390,6 +501,21 @@ def _default_channels() -> dict[str, ChannelConfig]:
         "tasks": ChannelConfig(
             file_prefix=".tasks_",
             options=ChannelOptions(formatter="task-only"),
+        ),
+        # .thinking_*: opt-in reasoning-only stream (2026-09-03, Addendum 1).
+        # Disabled by default like fileio / tools-output; when enabled it
+        # collects every entry whose kind is "thinking" -- the main thread's
+        # and the agents' -- and nothing else (no category route lands
+        # here). Same shape as convo so a block reads as prose.
+        "thinking": ChannelConfig(
+            file_prefix=".thinking_",
+            enabled=False,
+            options=ChannelOptions(
+                verbosity="full",
+                formatter="chat",
+                newline_policy=NewlinePolicy.RENDER,
+                collect={"kind": [KIND_THINKING]},
+            ),
         ),
         # unknowns: 100-char preview matches shell/tools default since
         # uncategorized tools are usually shell-shaped.
@@ -464,36 +590,36 @@ def _default_category_routes() -> dict[str, list[str]]:
         # `tools` provides the AI-activity investigation view; `sesslog` is
         # the kitchen-sink "everything" channel; `shell` stays the clean
         # shell-history channel.
-        "_default": ["shell", "sesslog", "tools"],
-        "task": ["shell", "sesslog", "tools", "tasks"],
+        "_default": ["shell", "sesslog", "sesslog-main", "tools"],
+        "task": ["shell", "sesslog", "sesslog-main", "tools", "tasks"],
         # TodoWrite belongs in the tasks channel alongside the Task* family
         # (#87). `action_only.todo: True` is unchanged -- TodoWrite still
         # logs in action-only mode by default; this just adds the tasks
         # channel to its routing destination so all task-related ops land
         # in one place.
-        "todo": ["shell", "sesslog", "tools", "tasks"],
+        "todo": ["shell", "sesslog", "sesslog-main", "tools", "tasks"],
         # Phase 2+3: io category (Read/Write/Edit/MultiEdit/NotebookEdit)
         # also routes to the opt-in `.fileio_*` channel for users who want
         # full file-operation content captured to disk. fileio is disabled
         # by default; this route is harmless when fileio.enabled = False.
-        "io": ["shell", "sesslog", "tools", "fileio"],
+        "io": ["shell", "sesslog", "sesslog-main", "tools", "fileio"],
         # Uncategorized tools go to sesslog and to a dedicated unknowns
         # channel for discovery. NOT routed to shell or tools.
-        "unknown": ["sesslog", "unknowns"],
+        "unknown": ["sesslog", "sesslog-main", "unknowns"],
         # Conversation categories (sub-issues #33-#35): user prompts, AI
         # text responses, agent dialogue. Route to sesslog (kitchen sink)
         # AND the dedicated convo channel. NOT routed to shell, tools, or
         # tasks -- prose belongs in its own channel.
-        "message_user": ["sesslog", "convo"],
-        "message_ai": ["sesslog", "convo"],
-        "message_agent": ["sesslog", "convo"],
+        "message_user": ["sesslog", "sesslog-main", "convo"],
+        "message_ai": ["sesslog", "sesslog-main", "convo"],
+        "message_agent": ["sesslog", "sesslog-main", "convo"],
         # Phase 5 (Github #40): the `meta` category contains Task tool only
         # (sub-agent invocations). Route to sesslog (kitchen sink) AND the
         # dedicated agents channel. NOT routed to shell or tools -- agent
         # invocations are agent-specific, not shell history or general AI
         # activity. Users who want Task in `.tools_*` for investigation
         # views can override `routing.category_routes.meta` in their config.
-        "meta": ["sesslog", "agents"],
+        "meta": ["sesslog", "sesslog-main", "agents"],
     }
 
 
@@ -528,8 +654,8 @@ def _default_tool_overrides() -> dict[str, list[str]]:
     the override and falls back to the category route.
     """
     return {
-        "TaskStop": ["shell", "sesslog", "tools"],
-        "TaskOutput": ["sesslog", "tools", "tools-output"],
+        "TaskStop": ["shell", "sesslog", "sesslog-main", "tools"],
+        "TaskOutput": ["sesslog", "sesslog-main", "tools", "tools-output"],
     }
 
 
@@ -605,6 +731,14 @@ class Config:
     failure_capture_enabled: bool = False
     failure_capture_stderr: bool = True
     failure_capture_max_lines: int = 50
+
+    # Thinking capture (2026-09-03, Addendum 1): the global switch. True
+    # (default) = thinking blocks are extracted from the main transcript and
+    # from agent sidechains and route like the narration they belong to
+    # (sesslog, convo, the per-agent files); False = never extracted -- no
+    # LogEntry is built, no cost. Per-channel placement is
+    # ChannelOptions.thinking.
+    thinking: bool = True
 
     # NEW: Performance settings
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
@@ -689,6 +823,15 @@ class LogEntry:
       is_failure:     failure flag (default formatter adds [FAILED:] annotation)
       failure_reason: human-readable reason
       error_output:   captured stderr (multi-line OK)
+      kind:           which transcript block this entry came from: "text"
+                      (default) or "thinking" (2026-09-03). Formatters pick
+                      the THINK / AGENT-THINK display role from it; channels
+                      may exclude/collect on it.
+      agent_leg:      for entries that belong to a subagent's story: "dispatch"
+                      (the Agent call), "internal" (its own tool calls,
+                      narration, thinking) or "report" (its final message);
+                      None for main-thread entries. sesslog-main excludes
+                      "internal".
     """
     raw_content: str
     role: str
@@ -701,3 +844,5 @@ class LogEntry:
     is_failure: bool = False
     failure_reason: Optional[str] = None
     error_output: Optional[str] = None
+    kind: str = KIND_TEXT
+    agent_leg: Optional[str] = None

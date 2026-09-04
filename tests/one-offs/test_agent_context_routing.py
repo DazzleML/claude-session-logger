@@ -331,7 +331,7 @@ class TestSubtypeSourceRule:
         logger, _ = fresh_logger
         raw = {"tool_name": "Read", "tool_input": {"file_path": "x"}}
         out = logger._expand_with_subtype_channels(
-            ["sesslog", "agents"], "Read", "io", raw,
+            ["sesslog", "sesslog-main", "agents"], "Read", "io", raw,
             collect_sources={"agents": "explore"},
         )
         assert "agents-explore" in out
@@ -340,8 +340,8 @@ class TestSubtypeSourceRule:
         logger, _ = fresh_logger
         raw = {"tool_name": "Read", "tool_input": {"file_path": "x"}}
         out = logger._expand_with_subtype_channels(
-            ["sesslog", "agents"], "Read", "io", raw)
-        assert out == ["sesslog", "agents"]
+            ["sesslog", "sesslog-main", "agents"], "Read", "io", raw)
+        assert out == ["sesslog", "sesslog-main", "agents"]
 
 
 # ============================================================================
@@ -490,15 +490,19 @@ class TestAgentLabelModes:
         return format_for_channel(entry, opts, channel_name, Config())
 
     def _tool_entry(self, ctx="Explore"):
-        # Shaped like generate_entry output: dual-rendered legacy strings
+        # Shaped like generate_entry output: the `always` string baked as is,
+        # plus the label-sentinel template the formatter fills for every other
+        # mode (unit 7, 2026-09-03, replaced the plain dual-render)
+        from cclogger.formatters.legacy import LABEL_SENTINEL
         from cclogger.models import LogEntry
         return LogEntry(
             raw_content="echo hi",
             role="bash",
             metadata={
                 "_legacy_complete": '[[2026-08-13 12:00:00]] {Bash|Explore: echo hi }',
-                "_legacy_complete_plain": '[[2026-08-13 12:00:00]] {Bash: echo hi }',
-                "summary_plain": None,
+                "_legacy_complete_t": f'[[2026-08-13 12:00:00]] {{{LABEL_SENTINEL}: echo hi }}',
+                "summary_t": None,
+                "tool_display_base": "Bash",
             },
             timestamp=datetime(2026, 8, 13, 12, 0, 0),
             tool_name="Bash",
@@ -568,9 +572,12 @@ class TestAgentLabelModes:
         apply_override_channel_options(opts, {"agent_label": None}, "t")
         assert opts.agent_label == "always"
 
-    def test_dual_render_variants_from_real_generation(self):
-        # generate_entry bakes both variants when context present
-        from cclogger.formatters.legacy import generate_entry
+    def test_label_template_from_real_generation(self):
+        # generate_entry bakes the `always` string AND a label-sentinel
+        # template when context is present; the template filled with the
+        # `always` label is the baked string (only the label differs). Unit 7
+        # (2026-09-03) replaced the plain dual-render with this template.
+        from cclogger.formatters.legacy import LABEL_SENTINEL, generate_entry
         from cclogger.models import Config, ToolInfo
         ti = ToolInfo.from_json({
             "tool_name": "Bash", "tool_input": {"command": "echo x"},
@@ -579,6 +586,7 @@ class TestAgentLabelModes:
         entry = generate_entry(ti, Config(), "echo x",
                                datetime(2026, 8, 13, 12, 0, 0))
         lc = entry.metadata["_legacy_complete"]
-        plain = entry.metadata["_legacy_complete_plain"]
-        assert "Bash|Explore" in lc and "Bash|Explore" not in plain
-        assert plain.replace("{Bash:", "{Bash|Explore:") == lc  # only the label differs
+        template = entry.metadata["_legacy_complete_t"]
+        assert "Bash|Explore" in lc and LABEL_SENTINEL in template
+        assert template.replace(LABEL_SENTINEL, "Bash|Explore") == lc
+        assert entry.metadata["tool_display_base"] == "Bash"
